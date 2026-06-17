@@ -1,0 +1,154 @@
+{
+  "entities": {
+    "Freelancer": {
+      "title": "Freelancer Profile",
+      "description": "Information about the freelancer profile settings",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "businessName": { "type": "string" },
+        "currency": { "type": "string" },
+        "country": { "type": "string" },
+        "plan": { "type": "string" },
+        "onboardingCompleted": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "name", "currency", "country", "plan", "onboardingCompleted", "createdAt"]
+    },
+    "Client": {
+      "title": "Client",
+      "description": "Represents a client profile managed by the freelancer",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "freelancerId": { "type": "string" },
+        "companyName": { "type": "string" },
+        "contactPerson": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "notes": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "freelancerId", "companyName", "contactPerson", "status", "createdAt"]
+    },
+    "Project": {
+      "title": "Project",
+      "description": "A freelance project assigned to a specific client",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "freelancerId": { "type": "string" },
+        "name": { "type": "string" },
+        "clientId": { "type": "string" },
+        "budget": { "type": "number" },
+        "deadline": { "type": "string" },
+        "status": { "type": "string" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "freelancerId", "name", "clientId", "budget", "deadline", "status", "createdAt"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "A scheduled task belonging to a freelance project",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "freelancerId": { "type": "string" },
+        "projectId": { "type": "string" },
+        "title": { "type": "string" },
+        "dueDate": { "type": "string" },
+        "priority": { "type": "string" },
+        "completed": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "freelancerId", "projectId", "title", "dueDate", "priority", "completed", "createdAt"]
+    },
+    "Invoice": {
+      "title": "Invoice",
+      "description": "A professional invoice generated for clients",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "freelancerId": { "type": "string" },
+        "clientId": { "type": "string" },
+        "projectId": { "type": "string" },
+        "invoiceNumber": { "type": "string" },
+        "amount": { "type": "number" },
+        "dueDate": { "type": "string" },
+        "status": { "type": "string" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "freelancerId", "clientId", "projectId", "invoiceNumber", "amount", "dueDate", "status", "createdAt"]
+    },
+    "Lead": {
+      "title": "Lead",
+      "description": "A potential prospective sales lead or inquiry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "freelancerId": { "type": "string" },
+        "companyName": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "value": { "type": "number" },
+        "status": { "type": "string" },
+        "source": { "type": "string" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "freelancerId", "companyName", "name", "value", "status", "source", "createdAt"]
+    },
+    "DocumentRecord": {
+      "title": "Document Record",
+      "description": "A document reference metadata file",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "freelancerId": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string" },
+        "size": { "type": "string" },
+        "uploadDate": { "type": "string" },
+        "url": { "type": "string" },
+        "category": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "freelancerId", "name", "type", "size", "uploadDate", "url", "category", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/freelancers/{freelancerId}": {
+      "schema": "Freelancer",
+      "description": "Access profile for a registered freelancer"
+    },
+    "/clients/{clientId}": {
+      "schema": "Client",
+      "description": "Clients belonging to a freelancer workspace"
+    },
+    "/projects/{projectId}": {
+      "schema": "Project",
+      "description": "Projects belonging to a freelancer workspace"
+    },
+    "/tasks/{taskId}": {
+      "schema": "Task",
+      "description": "Tasks belonging to a project"
+    },
+    "/invoices/{invoiceId}": {
+      "schema": "Invoice",
+      "description": "Invoices belonging to a freelancer workspace"
+    },
+    "/leads/{leadId}": {
+      "schema": "Lead",
+      "description": "Leads belonging to a freelancer workspace"
+    },
+    "/documents/{documentId}": {
+      "schema": "DocumentRecord",
+      "description": "Document metadata records"
+    }
+  }
+}

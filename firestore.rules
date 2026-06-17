@@ -1,0 +1,64 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global safety net: default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Reusable core helpers
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Freelancer profiles
+    match /freelancers/{freelancerId} {
+      allow get: if isValidId(freelancerId);
+      allow create, update: if isValidId(freelancerId) && request.resource.data.id == freelancerId;
+      allow delete: if isValidId(freelancerId);
+    }
+
+    // Clients collection
+    match /clients/{clientId} {
+      allow read: if isValidId(clientId);
+      allow create, update: if isValidId(clientId) && request.resource.data.id == clientId && isValidId(request.resource.data.freelancerId);
+      allow delete: if isValidId(clientId);
+    }
+
+    // Projects collection
+    match /projects/{projectId} {
+      allow read: if isValidId(projectId);
+      allow create, update: if isValidId(projectId) && request.resource.data.id == projectId && isValidId(request.resource.data.freelancerId);
+      allow delete: if isValidId(projectId);
+    }
+
+    // Tasks collection
+    match /tasks/{taskId} {
+      allow read: if isValidId(taskId);
+      allow create, update: if isValidId(taskId) && request.resource.data.id == taskId && isValidId(request.resource.data.freelancerId);
+      allow delete: if isValidId(taskId);
+    }
+
+    // Invoices collection
+    match /invoices/{invoiceId} {
+      allow read: if isValidId(invoiceId);
+      allow create, update: if isValidId(invoiceId) && request.resource.data.id == invoiceId && isValidId(request.resource.data.freelancerId);
+      allow delete: if isValidId(invoiceId);
+    }
+
+    // Leads collection
+    match /leads/{leadId} {
+      allow read: if isValidId(leadId);
+      allow create, update: if isValidId(leadId) && request.resource.data.id == leadId && isValidId(request.resource.data.freelancerId);
+      allow delete: if isValidId(leadId);
+    }
+
+    // Documents collection
+    match /documents/{documentId} {
+      allow read: if isValidId(documentId);
+      allow create, update: if isValidId(documentId) && request.resource.data.id == documentId && isValidId(request.resource.data.freelancerId);
+      allow delete: if isValidId(documentId);
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Freelancer CRM",
+  "description": "A simple and modern CRM for freelancers to manage clients, projects, tasks, invoices, leads, and revenue analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
