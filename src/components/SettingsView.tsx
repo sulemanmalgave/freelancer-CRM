@@ -1,17 +1,21 @@
 import React, { useState } from "react";
-import { User, Landmark, Coins, ShieldCheck, Sun, Award, Sparkles, RefreshCw } from "lucide-react";
+import { User, Landmark, Coins, ShieldCheck, Sun, Award, Sparkles, RefreshCw, Laptop, Download } from "lucide-react";
 import { FreelancerProfile } from "../types";
 
 interface SettingsViewProps {
   profile: FreelancerProfile;
   onUpdateProfile: (p: Partial<FreelancerProfile>) => void;
   onTriggerUpgrade: (reason: string) => void;
+  isInstallable: boolean;
+  onInstall: () => void;
 }
 
 export default function SettingsView({
   profile,
   onUpdateProfile,
   onTriggerUpgrade,
+  isInstallable,
+  onInstall,
 }: SettingsViewProps) {
   const [name, setName] = useState(profile?.name || "");
   const [businessName, setBusinessName] = useState(profile?.businessName || "");
@@ -173,6 +177,50 @@ export default function SettingsView({
               </div>
             </div>
           )}
+        </div>
+
+        {/* PWA & System Compatibility Integration Card */}
+        <div className="p-5 glass-panel rounded-2xl text-xs space-y-4">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 bg-indigo-50 border border-indigo-100 rounded-lg text-indigo-600">
+              <Laptop className="w-4 h-4 text-indigo-500" />
+            </div>
+            <div>
+              <h3 className="font-bold text-xs uppercase tracking-widest text-slate-800">PWA Integration</h3>
+              <p className="text-[9px] text-slate-400">Offline Standalone Workspace</p>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <div className="text-[10px] text-slate-500 space-y-1 bg-slate-50 border border-slate-100 p-2.5 rounded-xl">
+              <div className="flex justify-between items-center pb-1 border-b border-slate-200">
+                <span>Caching Engine</span>
+                <span className="text-[8px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-bold">ACTIVE</span>
+              </div>
+              <div className="flex justify-between items-center pt-1">
+                <span>Offline Access</span>
+                <span className="font-semibold text-slate-700">Supported</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span>Platform Compatibility</span>
+                <span className="font-semibold text-slate-700">Win/macOS/Android</span>
+              </div>
+            </div>
+
+            {isInstallable ? (
+              <button
+                onClick={onInstall}
+                className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold text-center transition-all flex items-center justify-center gap-1 cursor-pointer shadow-md shadow-indigo-600/10"
+              >
+                <Download size={12} />
+                <span>Install App on Device</span>
+              </button>
+            ) : (
+              <div className="p-2.5 bg-indigo-50/50 border border-indigo-100 text-indigo-600 rounded-lg text-center text-[9px] font-medium leading-normal">
+                App is running-ready on your machine. Browser-native installation is fully compatible with Microsoft Store, Chrome, and Safari.
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

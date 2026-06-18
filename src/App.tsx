@@ -19,8 +19,12 @@ import {
   X,
   Coins,
   Star,
-  Zap
+  Zap,
+  Download,
+  Monitor
 } from "lucide-react";
+
+const logoIcon = "/icon-192.png";
 
 // Types
 import { FreelancerProfile, Client, Project, Task, Invoice, Lead, DocumentRecord } from "./types";
@@ -64,6 +68,51 @@ export default function App() {
   const triggerUpgrade = (reason: string) => {
     setUpgradeReason(reason);
     setUpgradeOpen(true);
+  };
+
+  // PWA Installation state machine
+  const [pwaPrompt, setPwaPrompt] = useState<any>(null);
+  const [showPwaBanner, setShowPwaBanner] = useState(false);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: any) => {
+      e.preventDefault();
+      setPwaPrompt(e);
+      (window as any).deferredPrompt = e;
+
+      const isDismissed = sessionStorage.getItem("pwa_dismissed") === "true";
+      if (!isDismissed) {
+        setShowPwaBanner(true);
+      }
+    };
+
+    const handleAppInstalled = () => {
+      setPwaPrompt(null);
+      (window as any).deferredPrompt = null;
+      setShowPwaBanner(false);
+      console.log("Freelancer CRM was installed successfully.");
+    };
+
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    window.addEventListener("appinstalled", handleAppInstalled);
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", handleAppInstalled);
+    };
+  }, []);
+
+  const triggerPwaInstall = async () => {
+    const promptEvent = pwaPrompt || (window as any).deferredPrompt;
+    if (!promptEvent) return;
+
+    promptEvent.prompt();
+    const { outcome } = await promptEvent.userChoice;
+    console.log(`User response to installation prompt: ${outcome}`);
+
+    setPwaPrompt(null);
+    (window as any).deferredPrompt = null;
+    setShowPwaBanner(false);
   };
 
   // 1. Initial State Bootstrap from Local Caching
@@ -433,8 +482,8 @@ export default function App() {
         {/* Brand identity */}
         <div className="p-6 border-b border-white/10 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 bg-indigo-600 rounded-xl text-white shadow-lg shadow-indigo-550/20">
-              <Zap className="w-5 h-5" />
+            <div className="p-0.5 bg-transparent rounded-xl flex items-center justify-center shrink-0 w-8 h-8 select-none">
+              <img src={logoIcon} alt="Freelancer CRM Logo" className="w-8 h-8 rounded-xl object-contain shadow-sm shadow-indigo-500/10" referrerPolicy="no-referrer" />
             </div>
             <div>
               <h1 className="font-bold text-sm tracking-tight text-slate-900 leading-none">
@@ -522,8 +571,8 @@ export default function App() {
       {/* Mobile Top Header */}
       <header className="md:hidden glass-aside border-b border-white/10 flex items-center justify-between p-4 px-5 select-none no-print z-20">
         <div className="flex items-center gap-2">
-          <div className="p-1.5 bg-indigo-650 text-white rounded-lg">
-            <Zap className="w-4 h-4" />
+          <div className="p-0.5 bg-transparent rounded-lg flex items-center justify-center shrink-0 w-7 h-7 select-none">
+            <img src={logoIcon} alt="Freelancer CRM Logo" className="w-7 h-7 rounded-lg object-contain shadow-sm" referrerPolicy="no-referrer" />
           </div>
           <div>
             <span className="font-extrabold text-xs tracking-tight text-slate-900 block">
@@ -706,6 +755,8 @@ export default function App() {
               profile={profile}
               onUpdateProfile={handleUpdateProfile}
               onTriggerUpgrade={triggerUpgrade}
+              isInstallable={!!pwaPrompt}
+              onInstall={triggerPwaInstall}
             />
           )}
         </div>
@@ -719,6 +770,68 @@ export default function App() {
         onUpgradeSuccess={(newPlan, subDetails) => handleUpdateProfile({ plan: newPlan, ...subDetails })}
         triggerReason={upgradeReason}
       />
+
+      {/* PWA Floating Install Banner */}
+      <AnimatePresence>
+        {showPwaBanner && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            className="fixed bottom-6 right-6 z-50 max-w-sm w-full bg-slate-900 border border-slate-800 text-white rounded-2xl p-4 shadow-2xl flex flex-col gap-3"
+            id="pwa-install-banner-container"
+          >
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-1.5 bg-indigo-600/20 border border-indigo-500/30 rounded-xl text-indigo-400">
+                  <Monitor className="w-5 h-5 animate-pulse" />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-xs tracking-tight text-white leading-none">
+                    Install Freelancer CRM
+                  </h4>
+                  <span className="text-[10px] text-slate-400 mt-1 block font-medium">Enable full screen offline workspace!</span>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  sessionStorage.setItem("pwa_dismissed", "true");
+                  setShowPwaBanner(false);
+                }}
+                className="text-slate-400 hover:text-white p-1 rounded-full hover:bg-white/10 transition-colors cursor-pointer"
+                id="close-pwa-banner-btn"
+              >
+                <X size={14} />
+              </button>
+            </div>
+
+            <p className="text-[10px] text-slate-300 leading-normal">
+              Get faster load speeds, native desktop launches, and continuous offline operations on Windows, Mac, or Android.
+            </p>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={triggerPwaInstall}
+                className="flex-1 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer shadow-lg shadow-indigo-600/10"
+                id="install-pwa-banner-btn"
+              >
+                <Download size={12} />
+                <span>Install Now</span>
+              </button>
+              <button
+                onClick={() => {
+                  sessionStorage.setItem("pwa_dismissed", "true");
+                  setShowPwaBanner(false);
+                }}
+                className="px-3 py-1.5 border border-white/10 text-[10px] text-slate-300 font-bold rounded-lg hover:bg-white/5 transition-all text-center cursor-pointer"
+                id="dismiss-pwa-banner-btn"
+              >
+                Not Now
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
