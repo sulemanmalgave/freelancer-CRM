@@ -94,12 +94,12 @@ export default function RevenueView({ invoices, profile, onTriggerUpgrade }: Rev
         <div className="p-5 rounded-2xl glass-panel glass-highlight flex items-center justify-between">
           <div className="space-y-1">
             <span className="text-xs font-bold text-slate-450 uppercase tracking-wider block">Total Received Income</span>
-            <strong className="text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono tracking-tight block">
+            <strong className="text-2xl font-black text-emerald-600 font-mono tracking-tight block">
               {formatCurrency(totalPaidRevenue, profile.currency)}
             </strong>
             <span className="text-[10px] text-slate-400 block font-medium">From {paidInvoicesList.length} cleared bills</span>
           </div>
-          <div className="p-3 bg-emerald-500/10 rounded-xl text-emerald-600 dark:text-emerald-400">
+          <div className="p-3 bg-emerald-500/10 rounded-xl text-emerald-600">
             <CheckCircle2 className="w-6 h-6" />
           </div>
         </div>
@@ -107,12 +107,12 @@ export default function RevenueView({ invoices, profile, onTriggerUpgrade }: Rev
         <div className="p-5 rounded-2xl glass-panel glass-highlight flex items-center justify-between">
           <div className="space-y-1">
             <span className="text-xs font-bold text-slate-450 uppercase tracking-wider block">Pending / Unpaid Bills</span>
-            <strong className="text-2xl font-black text-amber-600 dark:text-amber-400 font-mono tracking-tight block">
+            <strong className="text-2xl font-black text-amber-600 font-mono tracking-tight block">
               {formatCurrency(totalPendingRevenue, profile.currency)}
             </strong>
             <span className="text-[10px] text-slate-400 block font-medium">From {pendingInvoicesList.length} outstanding invoices</span>
           </div>
-          <div className="p-3 bg-amber-500/10 rounded-xl text-amber-600 dark:text-amber-400">
+          <div className="p-3 bg-amber-500/10 rounded-xl text-amber-600">
             <AlertCircle className="w-6 h-6" />
           </div>
         </div>
@@ -120,12 +120,12 @@ export default function RevenueView({ invoices, profile, onTriggerUpgrade }: Rev
         <div className="p-5 rounded-2xl glass-panel glass-highlight flex items-center justify-between">
           <div className="space-y-1">
             <span className="text-xs font-bold text-slate-450 uppercase tracking-wider block">Gross Valuation</span>
-            <strong className="text-2xl font-black text-purple-600 dark:text-purple-400 font-mono tracking-tight block">
+            <strong className="text-2xl font-black text-purple-600 font-mono tracking-tight block">
               {formatCurrency(totalPaidRevenue + totalPendingRevenue, profile.currency)}
             </strong>
             <span className="text-[10px] text-slate-400 block font-medium">Combined ledger backlog</span>
           </div>
-          <div className="p-3 bg-purple-500/10 rounded-xl text-purple-600 dark:text-purple-400">
+          <div className="p-3 bg-purple-500/10 rounded-xl text-purple-600">
             <TrendingUp className="w-6 h-6" />
           </div>
         </div>
@@ -137,7 +137,7 @@ export default function RevenueView({ invoices, profile, onTriggerUpgrade }: Rev
       }`}>
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h3 className="font-bold text-sm text-slate-800 dark:text-slate-150 uppercase tracking-widest flex items-center gap-1.5">
+            <h3 className="font-bold text-sm text-slate-800 uppercase tracking-widest flex items-center gap-1.5">
               <TrendingUp size={16} className="text-indigo-500" />
               <span>Rolling 6-Month Income Analytics</span>
             </h3>
@@ -149,10 +149,10 @@ export default function RevenueView({ invoices, profile, onTriggerUpgrade }: Rev
         <div className="w-full h-64 mt-4 select-none">
           <svg viewBox="0 0 600 240" className="w-full h-full text-xs">
             {/* Horizontal Grid lines */}
-            <line x1="40" y1="20" x2="560" y2="20" stroke="#f1f5f9" strokeDasharray="3" className="stroke-slate-100 dark:stroke-slate-800" />
-            <line x1="40" y1="80" x2="560" y2="80" stroke="#f1f5f9" strokeDasharray="3" className="stroke-slate-100 dark:stroke-slate-800" />
-            <line x1="40" y1="140" x2="560" y2="140" stroke="#f1f5f9" strokeDasharray="3" className="stroke-slate-100 dark:stroke-slate-800" />
-            <line x1="40" y1="200" x2="560" y2="200" stroke="#cbd5e1" className="stroke-slate-200 dark:stroke-slate-700" />
+            <line x1="40" y1="20" x2="560" y2="20" stroke="#f1f5f9" strokeDasharray="3" className="stroke-slate-100" />
+            <line x1="40" y1="80" x2="560" y2="80" stroke="#f1f5f9" strokeDasharray="3" className="stroke-slate-100" />
+            <line x1="40" y1="140" x2="560" y2="140" stroke="#f1f5f9" strokeDasharray="3" className="stroke-slate-100" />
+            <line x1="40" y1="200" x2="560" y2="200" stroke="#cbd5e1" className="stroke-slate-200" />
 
             {/* Render Bars for months */}
             {monthlyBreakout.map((mb, idx) => {
@@ -241,7 +241,7 @@ export default function RevenueView({ invoices, profile, onTriggerUpgrade }: Rev
 
         {/* Free Plan Overlays */}
         {profile.plan === "Free" && (
-          <div className="absolute inset-0 bg-slate-100/10 dark:bg-slate-950/20 backdrop-blur-[1px] flex flex-col justify-center items-center">
+          <div className="absolute inset-0 bg-slate-100/10 backdrop-blur-[1px] flex flex-col justify-center items-center">
             {/* Simple card to block */}
           </div>
         )}
@@ -257,9 +257,9 @@ export default function RevenueView({ invoices, profile, onTriggerUpgrade }: Rev
         ) : (
           <div className="space-y-2 max-h-56 overflow-y-auto">
             {paidInvoicesList.map((inv) => (
-              <div key={inv.id} className="p-3 border border-white/20 dark:border-white/5 rounded-xl flex items-center justify-between text-xs hover:bg-black/5 dark:hover:bg-black/20">
+              <div key={inv.id} className="p-3 border border-white/20 rounded-xl flex items-center justify-between text-xs hover:bg-black/5">
                 <div className="space-y-0.5">
-                  <span className="font-bold font-mono text-slate-800 dark:text-slate-100">{inv.invoiceNumber}</span>
+                  <span className="font-bold font-mono text-slate-800">{inv.invoiceNumber}</span>
                   <p className="text-[10px] text-slate-400">Cleared Date: {new Date(inv.issueDate).toLocaleDateString()}</p>
                 </div>
                 <strong className="text-emerald-500 font-bold font-mono">

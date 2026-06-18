@@ -76,7 +76,7 @@ export default function SettingsView({
               required
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full py-2.5 px-4 text-xs glass-input rounded-xl text-slate-850 dark:text-slate-202 focus:outline-none"
+              className="w-full py-2.5 px-4 text-xs glass-input rounded-xl text-slate-850 focus:outline-none"
             />
           </div>
 
@@ -89,7 +89,7 @@ export default function SettingsView({
               type="text"
               value={businessName}
               onChange={(e) => setBusinessName(e.target.value)}
-              className="w-full py-2.5 px-4 text-xs glass-input rounded-xl text-slate-850 dark:text-slate-202 focus:outline-none"
+              className="w-full py-2.5 px-4 text-xs glass-input rounded-xl text-slate-850 focus:outline-none"
               placeholder="e.g. Apex Studio"
             />
           </div>
@@ -102,7 +102,7 @@ export default function SettingsView({
             <select
               value={currency}
               onChange={(e) => setCurrency(e.target.value)}
-              className="w-full py-2.5 px-3 text-xs glass-input rounded-xl text-slate-850 dark:text-slate-202 focus:outline-none"
+              className="w-full py-2.5 px-3 text-xs glass-input rounded-xl text-slate-850 focus:outline-none"
             >
               {currenciesList.map((cur) => (
                 <option key={cur.code} value={cur.code}>
@@ -130,47 +130,45 @@ export default function SettingsView({
 
           {profile.plan === "Pro" ? (
             <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl space-y-2 mt-2">
-              <div className="flex items-center gap-1.5 text-emerald-500 font-bold">
+              <div className="flex items-center gap-1.5 text-emerald-600 font-bold">
                 <ShieldCheck className="w-4 h-4" />
-                <span>Subscription Plan Active</span>
+                <span>Pro Subscription Active</span>
               </div>
-              <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium leading-relaxed">
-                You are registered as a high priority **Pro User**. Enjoy limitless client entries, deliverables caching, receipts document storage, and analytics.
-              </p>
+              <div className="text-[10px] text-slate-500 space-y-1">
+                <div>Method: <strong className="text-slate-700">{profile.subscriptionMethod || "Direct Gateway"}</strong></div>
+                <div>Region: <strong className="text-slate-700">{profile.subscriptionRegion === "IN" ? "India (₹99/mo)" : "International ($1.99/mo)"}</strong></div>
+              </div>
               <button
-                onClick={() => onUpdateProfile({ plan: "Free" })}
-                className="text-[10px] text-red-550 font-bold hover:underline cursor-pointer"
+                onClick={() => onTriggerUpgrade("settings_upgrade")}
+                className="w-full mt-2 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold text-center transition-all flex items-center justify-center gap-1 cursor-pointer"
               >
-                Simulate Demote to Free
+                <Sparkles size={11} />
+                <span>Manage Subscription</span>
               </button>
             </div>
           ) : (
-            <div className="p-3 bg-black/5 dark:bg-black/20 border border-black/5 dark:border-white/5 rounded-xl space-y-2.5 mt-2">
-              <div className="flex items-center gap-1.5 text-slate-655 dark:text-slate-350 font-bold">
+            <div className="p-3 bg-black/5 border border-black/5 rounded-xl space-y-2.5 mt-2">
+              <div className="flex items-center gap-1.5 text-slate-655 font-bold">
                 <Landmark className="w-4 h-4" />
                 <span>Free Plan Workspace</span>
               </div>
               <p className="text-[10px] text-slate-400 leading-normal">
-                Upto 20 clients, 10 projects, and local invoicing. Restoring past store transactions or upgrading resolves boundaries instantly.
+                Tier limits of up to 20 clients and 10 projects are active. Subscribe to unlock unlimited records.
               </p>
               <div className="flex flex-col gap-1.5 pt-1.5">
                 <button
                   onClick={() => onTriggerUpgrade("settings_upgrade")}
-                  className="w-full py-1.5 bg-indigo-605 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold text-center transition-all flex items-center justify-center gap-0.5 cursor-pointer"
+                  className="w-full py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold text-center transition-all flex items-center justify-center gap-0.5 cursor-pointer"
                 >
                   <Sparkles size={11} />
                   <span>Subscribe Now</span>
                 </button>
                 <button
-                  onClick={handleRestorePurchases}
-                  className="w-full py-1.5 border border-white/10 dark:border-white/5 hover:bg-black/10 rounded-lg text-[10px] font-bold text-center flex items-center justify-center gap-1 cursor-pointer"
+                  onClick={() => onTriggerUpgrade("settings_upgrade")}
+                  className="w-full py-1.5 border border-slate-200 hover:bg-slate-50 rounded-lg text-[10px] font-bold text-slate-600 text-center flex items-center justify-center gap-1 cursor-pointer"
                 >
-                  {isRestoring ? (
-                    <RefreshCw size={11} className="animate-spin" />
-                  ) : (
-                    <Sun size={11} />
-                  )}
-                  <span>Restore purchases (RevenueCat)</span>
+                  <RefreshCw size={11} />
+                  <span>Restore Purchases</span>
                 </button>
               </div>
             </div>

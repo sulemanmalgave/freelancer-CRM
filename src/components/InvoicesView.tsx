@@ -28,6 +28,7 @@ export default function InvoicesView({
   const [isAdding, setIsAdding] = useState(false);
   const [activeTab, setActiveTab] = useState<"All" | Invoice["status"]>("All");
   const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
+  const [showClientWarning, setShowClientWarning] = useState(false);
 
   // Form Fields
   const [clientId, setClientId] = useState("");
@@ -58,7 +59,7 @@ export default function InvoicesView({
 
   const handleOpenAdd = () => {
     if (clients.length === 0) {
-      console.warn("Please configure a Client profile first before launching billing invoices.");
+      setShowClientWarning(true);
       return;
     }
     // Limit check for free tier
@@ -138,7 +139,7 @@ export default function InvoicesView({
               className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 activeTab === statusOption
                   ? "bg-indigo-600 text-white shadow-lg shadow-indigo-650/20"
-                  : "glass-item text-slate-500 hover:text-slate-800 dark:hover:text-white"
+                  : "glass-item text-slate-500 hover:text-slate-800"
               }`}
             >
               {statusOption} ({statusOption === "All" ? invoices.length : invoices.filter((i) => i.status === statusOption).length})
@@ -171,9 +172,9 @@ export default function InvoicesView({
               exit={{ scale: 0.95, opacity: 0 }}
               className="w-full max-w-2xl glass-modal rounded-x1/2 rounded-2xl shadow-2xl overflow-hidden my-8"
             >
-              <div className="p-5 border-b border-black/5 dark:border-white/5 flex items-center justify-between">
+              <div className="p-5 border-b border-black/5 flex items-center justify-between">
                 <div>
-                  <h3 className="font-bold text-sm text-slate-805 dark:text-slate-100">
+                  <h3 className="font-bold text-sm text-slate-805">
                     Draft New Account Invoice
                   </h3>
                   <span className="text-[10px] text-slate-400 font-medium">
@@ -182,7 +183,7 @@ export default function InvoicesView({
                 </div>
                 <button
                   onClick={() => setIsAdding(false)}
-                  className="p-1 rounded-full hover:bg-black/5 dark:hover:bg-white/5 text-slate-400"
+                  className="p-1 rounded-full hover:bg-black/5 text-slate-400"
                 >
                   <X size={16} />
                 </button>
@@ -247,9 +248,9 @@ export default function InvoicesView({
                 </div>
 
                 {/* Line Items Builder / Services */}
-                <div className="space-y-2 border-t border-black/5 dark:border-white/5 pt-4">
+                <div className="space-y-2 border-t border-black/5 pt-4">
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-700 dark:text-slate-300">Billable Services & Deliverables</span>
+                    <span className="font-bold text-slate-700">Billable Services & Deliverables</span>
                     <button
                       type="button"
                       onClick={handleAddServiceLine}
@@ -312,7 +313,7 @@ export default function InvoicesView({
                 </div>
 
                 {/* Subtotals & Taxes */}
-                <div className="grid md:grid-cols-2 gap-4 border-t border-black/5 dark:border-white/5 pt-4">
+                <div className="grid md:grid-cols-2 gap-4 border-t border-black/5 pt-4">
                   <div>
                     <label className="block text-slate-500 font-semibold mb-1">State / Professional Taxes (%)</label>
                     <input
@@ -326,7 +327,7 @@ export default function InvoicesView({
                     />
                   </div>
 
-                  <div className="p-3 bg-slate-500/5 dark:bg-black/20 border border-black/5 dark:border-white/5 rounded-xl space-y-1.5 text-right font-semibold">
+                  <div className="p-3 bg-slate-500/5 border border-black/5 rounded-xl space-y-1.5 text-right font-semibold">
                     <div className="flex items-center justify-between text-[11px] text-slate-450">
                       <span>Subtotal amount:</span>
                       <span className="font-mono">{formatCurrency(calculateSubtotal(services), profile.currency)}</span>
@@ -337,9 +338,9 @@ export default function InvoicesView({
                         <span className="font-mono">{formatCurrency(calculateSubtotal(services) * (taxRate / 100), profile.currency)}</span>
                       </div>
                     )}
-                    <div className="flex items-center justify-between pt-1 border-t border-dashed border-black/5 dark:border-white/5 text-sm font-bold text-slate-800 dark:text-slate-100">
+                    <div className="flex items-center justify-between pt-1 border-t border-dashed border-black/5 text-sm font-bold text-slate-800">
                       <span>Gross Due Total:</span>
-                      <span className="font-mono text-indigo-650 dark:text-indigo-400">
+                      <span className="font-mono text-indigo-650">
                         {formatCurrency(calculateSubtotal(services) + calculateSubtotal(services) * (taxRate / 100), profile.currency)}
                       </span>
                     </div>
@@ -386,10 +387,10 @@ export default function InvoicesView({
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="w-full max-w-2xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-900 rounded-2xl shadow-xl overflow-hidden print-layout"
+              className="w-full max-w-2xl bg-white border border-slate-200 rounded-2xl shadow-xl overflow-hidden print-layout"
             >
               {/* Actions Header (hidden during printing) */}
-              <div className="p-4 bg-slate-50 dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between no-print">
+              <div className="p-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between no-print">
                 <span className="font-bold text-xs text-slate-500">Invoice Review Panel</span>
                 <div className="flex items-center gap-2">
                   <button
@@ -401,7 +402,7 @@ export default function InvoicesView({
                   </button>
                   <button
                     onClick={() => setPreviewInvoice(null)}
-                    className="p-1 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400"
+                    className="p-1 rounded-full hover:bg-slate-200 text-slate-400"
                   >
                     <X size={16} />
                   </button>
@@ -546,9 +547,9 @@ export default function InvoicesView({
       </AnimatePresence>      {/* Listing Content */}
       {filteredInvoices.length === 0 ? (
         <div className="flex flex-col items-center justify-center p-12 rounded-2xl glass-panel text-center">
-          <FileText className="w-12 h-12 text-slate-300 dark:text-slate-600 mb-3" />
-          <h4 className="font-bold text-slate-800 dark:text-slate-200">No invoices drafted</h4>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm">
+          <FileText className="w-12 h-12 text-slate-300 mb-3" />
+          <h4 className="font-bold text-slate-800">No invoices drafted</h4>
+          <p className="text-xs text-slate-500 mt-1 max-w-sm">
             {invoices.length === 0
               ? "Your client ledger billing is empty. Start formatting beautiful invoices to secure direct bank transactions."
               : "Recheck search parameters or status filters to locate specific account bills."}
@@ -581,28 +582,28 @@ export default function InvoicesView({
                 <div>
                   <div className="flex items-start justify-between gap-2 mb-3">
                     <div>
-                      <h4 className="font-bold text-slate-800 dark:text-slate-205 text-sm font-mono leading-none">
+                      <h4 className="font-bold text-slate-800 text-sm font-mono leading-none">
                         {inv.invoiceNumber}
                       </h4>
-                      <strong className="text-xs text-indigo-505 dark:text-indigo-400 font-medium block mt-1 line-clamp-1">
+                      <strong className="text-xs text-indigo-505 font-medium block mt-1 line-clamp-1">
                         To: {client ? client.companyName : "Independent Lead"}
                       </strong>
                     </div>
                     <span className={`text-[9px] uppercase font-bold px-2 py-0.5 rounded-full ${
                       inv.status === "Paid"
-                        ? "bg-emerald-500/10 text-emerald-650 dark:text-emerald-400"
+                        ? "bg-emerald-500/10 text-emerald-650"
                         : inv.status === "Sent"
-                        ? "bg-sky-500/10 text-sky-655 dark:text-sky-305"
+                        ? "bg-sky-500/10 text-sky-655"
                         : "bg-slate-500/10 text-slate-400"
                     }`}>
                       {inv.status}
                     </span>
                   </div>
 
-                  <div className="space-y-1.5 text-xs text-slate-500 dark:text-slate-400 border-t border-black/5 dark:border-white/5 pt-3 mb-4">
+                  <div className="space-y-1.5 text-xs text-slate-500 border-t border-black/5 pt-3 mb-4">
                     <div className="flex items-baseline justify-between">
                       <span>Gross Due Total:</span>
-                      <strong className="text-slate-850 dark:text-slate-250 font-bold font-mono text-sm leading-none text-indigo-600 dark:text-indigo-400">
+                      <strong className="text-slate-850 font-bold font-mono text-sm leading-none text-indigo-600">
                         {formatCurrency(total, profile.currency)}
                       </strong>
                     </div>
@@ -621,7 +622,7 @@ export default function InvoicesView({
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1 mt-2.5 pt-3.5 border-t border-black/5 dark:border-white/5">
+                <div className="flex items-center gap-1 mt-2.5 pt-3.5 border-t border-black/5">
                   {inv.status !== "Paid" && (
                     <button
                       onClick={() => onUpdateInvoice(inv.id, { status: "Paid" })}
@@ -643,7 +644,7 @@ export default function InvoicesView({
 
                   <button
                     onClick={() => setPreviewInvoice(inv)}
-                    className="p-1 px-2.5 border border-white/20 dark:border-white/5 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-black/5 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer"
+                    className="p-1 px-2.5 border border-white/20 text-slate-500 hover:text-slate-700 hover:bg-black/5 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer"
                   >
                     <Printer size={11} />
                     <span>View / PDF</span>
@@ -665,6 +666,40 @@ export default function InvoicesView({
           })}
         </div>
       )}
+
+      {/* Client Warning Modal Overlay */}
+      <AnimatePresence>
+        {showClientWarning && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="w-full max-w-sm bg-white rounded-2xl shadow-xl overflow-hidden p-6 border border-slate-100"
+            >
+              <div className="flex flex-col items-center text-center">
+                <div className="p-3 bg-indigo-50 text-indigo-600 rounded-full mb-4">
+                  <AlertCircle size={24} />
+                </div>
+                <h3 className="font-extrabold text-slate-900 text-sm mb-2">
+                  Client Profile Required
+                </h3>
+                <p className="text-xs text-slate-500 mb-6 leading-relaxed">
+                  Please configure at least one Client profile first before launching billing invoices.
+                </p>
+                <div className="flex gap-2 w-full">
+                  <button
+                    onClick={() => setShowClientWarning(false)}
+                    className="flex-1 py-2 text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-colors cursor-pointer"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

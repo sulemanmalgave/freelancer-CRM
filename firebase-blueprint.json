@@ -12,7 +12,11 @@
         "country": { "type": "string" },
         "plan": { "type": "string" },
         "onboardingCompleted": { "type": "boolean" },
-        "createdAt": { "type": "string" }
+        "createdAt": { "type": "string" },
+        "subscriptionStatus": { "type": "string" },
+        "subscriptionRegion": { "type": "string" },
+        "subscriptionMethod": { "type": "string" },
+        "subscriptionRenewsAt": { "type": "string" }
       },
       "required": ["id", "name", "currency", "country", "plan", "onboardingCompleted", "createdAt"]
     },

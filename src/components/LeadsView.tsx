@@ -129,7 +129,7 @@ export default function LeadsView({
               className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 activePipelineStage === pStage
                   ? "bg-indigo-600 text-white shadow-lg shadow-indigo-650/20"
-                  : "glass-item text-slate-500 hover:text-slate-800 dark:hover:text-white"
+                  : "glass-item text-slate-500 hover:text-slate-800"
               }`}
             >
               {pStage} ({pStage === "All" ? leads.length : leads.filter((l) => l.status === pStage).length})
@@ -156,8 +156,8 @@ export default function LeadsView({
               exit={{ scale: 0.95, opacity: 0 }}
               className="w-full max-w-md glass-modal rounded-2xl shadow-2xl overflow-hidden my-6"
             >
-              <div className="p-5 border-b border-black/5 dark:border-white/5 flex items-center justify-between">
-                <h3 className="font-bold text-sm text-slate-800 dark:text-slate-200">
+              <div className="p-5 border-b border-black/5 flex items-center justify-between">
+                <h3 className="font-bold text-sm text-slate-800">
                   {isAdding ? "Document New Prospect Lead" : `Edit Lead: ${editingLead?.name}`}
                 </h3>
                 <button
@@ -165,7 +165,7 @@ export default function LeadsView({
                     setIsAdding(false);
                     setEditingLead(null);
                   }}
-                  className="p-1 rounded-full hover:bg-black/5 dark:hover:bg-white/5 text-slate-400"
+                  className="p-1 rounded-full hover:bg-black/5 text-slate-400"
                 >
                   <X size={16} />
                 </button>
@@ -179,7 +179,7 @@ export default function LeadsView({
                     required
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 dark:text-slate-202 text-xs focus:outline-none"
+                    className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 text-xs focus:outline-none"
                     placeholder="e.g. Monica Geller"
                   />
                 </div>
@@ -190,7 +190,7 @@ export default function LeadsView({
                     type="text"
                     value={companyName}
                     onChange={(e) => setCompanyName(e.target.value)}
-                    className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 dark:text-slate-202 text-xs focus:outline-none"
+                    className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 text-xs focus:outline-none"
                     placeholder="e.g. Monica Kitchen Catering"
                   />
                 </div>
@@ -202,7 +202,7 @@ export default function LeadsView({
                       type="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 dark:text-slate-202 text-xs focus:outline-none"
+                      className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 text-xs focus:outline-none"
                       placeholder="monica@kitchen.org"
                     />
                   </div>
@@ -212,7 +212,7 @@ export default function LeadsView({
                       type="text"
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
-                      className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 dark:text-slate-202 text-xs focus:outline-none"
+                      className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 text-xs focus:outline-none"
                       placeholder="+1 (555) 789-0123"
                     />
                   </div>
@@ -224,7 +224,7 @@ export default function LeadsView({
                     <select
                       value={source}
                       onChange={(e) => setSource(e.target.value)}
-                      className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 dark:text-slate-202 text-xs focus:outline-none"
+                      className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 text-xs focus:outline-none"
                     >
                       <option value="LinkedIn">LinkedIn</option>
                       <option value="Upwork">Upwork</option>
@@ -247,7 +247,7 @@ export default function LeadsView({
                         min="0"
                         value={budget || ""}
                         onChange={(e) => setBudget(Number(e.target.value) || 0)}
-                        className="w-full py-2 pl-6 pr-2 glass-input rounded-xl text-slate-808 dark:text-slate-202 text-xs focus:outline-none font-mono"
+                        className="w-full py-2 pl-6 pr-2 glass-input rounded-xl text-slate-808 text-xs focus:outline-none font-mono"
                         placeholder="1200"
                       />
                     </div>
@@ -261,7 +261,7 @@ export default function LeadsView({
                       type="date"
                       value={followUpDate}
                       onChange={(e) => setFollowUpDate(e.target.value)}
-                      className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 dark:text-slate-202 text-xs focus:outline-none"
+                      className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 text-xs focus:outline-none"
                     />
                   </div>
 
@@ -287,7 +287,7 @@ export default function LeadsView({
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
                     rows={2}
-                    className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 dark:text-slate-202 text-xs focus:outline-none resize-none"
+                    className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 text-xs focus:outline-none resize-none"
                     placeholder="Wants React build, 1-month timeline, high priority referral..."
                   />
                 </div>
@@ -317,9 +317,9 @@ export default function LeadsView({
       </AnimatePresence>      {/* Render Lead items */}
       {filteredLeads.length === 0 ? (
         <div className="flex flex-col items-center justify-center p-12 rounded-2xl glass-panel text-center">
-          <Star className="w-12 h-12 text-slate-300 dark:text-slate-600 mb-3" />
-          <h4 className="font-bold text-slate-800 dark:text-slate-250">No pipeline prospects</h4>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm">
+          <Star className="w-12 h-12 text-slate-300 mb-3" />
+          <h4 className="font-bold text-slate-800">No pipeline prospects</h4>
+          <p className="text-xs text-slate-500 mt-1 max-w-sm">
             {leads.length === 0
               ? "Your business development channel is currently clear. Direct new contact entries or opportunities to log them here."
               : "Recheck the stage filter categories to locate prospects matching your criteria."}
@@ -346,7 +346,7 @@ export default function LeadsView({
                 <div>
                   <div className="flex items-start justify-between gap-2 mb-3">
                     <div>
-                      <h4 className="font-bold text-slate-800 dark:text-slate-100 text-sm line-clamp-1">
+                      <h4 className="font-bold text-slate-800 text-sm line-clamp-1">
                         {l.name}
                       </h4>
                       {l.companyName && (
@@ -357,21 +357,21 @@ export default function LeadsView({
                     </div>
                     <span className={`text-[9px] uppercase font-bold px-2 py-0.5 rounded-full ${
                       l.status === "Won"
-                        ? "bg-emerald-500/10 text-emerald-650 dark:text-emerald-400"
+                        ? "bg-emerald-500/10 text-emerald-650"
                         : l.status === "Proposal Sent" || l.status === "Contacted"
-                        ? "bg-indigo-500/10 text-indigo-650 dark:text-indigo-400"
+                        ? "bg-indigo-500/10 text-indigo-650"
                         : l.status === "New"
-                        ? "bg-sky-500/10 text-sky-655 dark:text-sky-305"
-                        : "bg-red-500/10 text-red-550 dark:text-red-400"
+                        ? "bg-sky-500/10 text-sky-655"
+                        : "bg-red-500/10 text-red-550"
                     }`}>
                       {l.status}
                     </span>
                   </div>
 
-                  <div className="space-y-1.5 text-xs text-slate-500 dark:text-slate-400 border-t border-black/5 dark:border-white/5 pt-3 mb-4">
+                  <div className="space-y-1.5 text-xs text-slate-500 border-t border-black/5 pt-3 mb-4">
                     <div className="flex items-center justify-between">
                       <span>Proximity Source:</span>
-                      <strong className="font-medium text-slate-700 dark:text-slate-350 bg-black/5 dark:bg-white/5 px-1.5 py-0.5 rounded-md">
+                      <strong className="font-medium text-slate-700 bg-black/5 px-1.5 py-0.5 rounded-md">
                         {l.source}
                       </strong>
                     </div>
@@ -379,7 +379,7 @@ export default function LeadsView({
                     {l.budget > 0 && (
                       <div className="flex items-center justify-between">
                         <span>Expected Value:</span>
-                        <strong className="font-bold text-slate-800 dark:text-slate-200 font-mono">
+                        <strong className="font-bold text-slate-800 font-mono">
                           {formatCurrency(l.budget, currency)}
                         </strong>
                       </div>
@@ -398,19 +398,19 @@ export default function LeadsView({
                     )}
 
                     {l.notes && (
-                      <p className="text-[11px] text-slate-450 p-2 rounded-lg bg-black/5 dark:bg-black/20 italic mt-2 line-clamp-2">
+                      <p className="text-[11px] text-slate-450 p-2 rounded-lg bg-black/5 italic mt-2 line-clamp-2">
                         "{l.notes}"
                       </p>
                     )}
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between gap-1 border-t border-black/5 dark:border-white/5 pt-3 opacity-90 group-hover:opacity-100 transition-opacity">
+                <div className="flex items-center justify-between gap-1 border-t border-black/5 pt-3 opacity-90 group-hover:opacity-100 transition-opacity">
                   {/* Convert to client option */}
                   {l.status !== "Won" ? (
                     <button
                       onClick={() => onConvertToClient(l)}
-                      className="p-1 px-2.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-650 dark:text-indigo-400 hover:text-white hover:bg-indigo-600 rounded-lg text-[10px] font-extrabold transition-all flex items-center gap-1.5 cursor-pointer"
+                      className="p-1 px-2.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-650 hover:text-white hover:bg-indigo-600 rounded-lg text-[10px] font-extrabold transition-all flex items-center gap-1.5 cursor-pointer"
                     >
                       <UserCheck size={11} />
                       <span>Convert to Client</span>

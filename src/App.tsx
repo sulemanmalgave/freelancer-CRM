@@ -421,37 +421,37 @@ export default function App() {
   ];
 
   return (
-    <div className="min-h-screen flex flex-col md:flex-row bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 transition-colors antialiased font-sans relative overflow-x-hidden">
+    <div className="min-h-screen flex flex-col md:flex-row bg-slate-50 text-slate-800 transition-colors antialiased font-sans relative overflow-x-hidden">
       {/* Background ambient lighting blobs */}
-      <div className="absolute inset-0 bg-gradient-to-br from-indigo-100/10 via-slate-50/40 to-emerald-50/5 dark:from-indigo-950/20 dark:via-slate-950 dark:to-emerald-950/20 z-0 pointer-events-none"></div>
-      <div className="absolute top-[-10%] left-[-10%] w-[45%] h-[45%] bg-indigo-500/10 dark:bg-blue-600/15 rounded-full blur-[130px] z-0 pointer-events-none animate-pulse" style={{ animationDuration: '10s' }}></div>
-      <div className="absolute bottom-[10%] right-[-5%] w-[45%] h-[45%] bg-emerald-400/10 dark:bg-emerald-500/10 rounded-full blur-[130px] z-0 pointer-events-none animate-pulse" style={{ animationDuration: '14s' }}></div>
-      <div className="absolute top-[35%] right-[20%] w-[35%] h-[35%] bg-purple-400/5 dark:bg-purple-600/10 rounded-full blur-[100px] z-0 pointer-events-none"></div>
+      <div className="absolute inset-0 bg-gradient-to-br from-indigo-100/10 via-slate-50/40 to-emerald-50/5 z-0 pointer-events-none"></div>
+      <div className="absolute top-[-10%] left-[-10%] w-[45%] h-[45%] bg-indigo-500/10 rounded-full blur-[130px] z-0 pointer-events-none animate-pulse" style={{ animationDuration: '10s' }}></div>
+      <div className="absolute bottom-[10%] right-[-5%] w-[45%] h-[45%] bg-emerald-400/10 rounded-full blur-[130px] z-0 pointer-events-none animate-pulse" style={{ animationDuration: '14s' }}></div>
+      <div className="absolute top-[35%] right-[20%] w-[35%] h-[35%] bg-purple-400/5 rounded-full blur-[100px] z-0 pointer-events-none"></div>
 
       {/* Side Rail View (Left on desktops/tablets, hidden/drawer on mobile) */}
       <aside className="hidden md:flex flex-col w-64 glass-aside shrink-0 select-none pb-6 no-print z-10">
         {/* Brand identity */}
-        <div className="p-6 border-b border-white/10 dark:border-white/5 flex items-center justify-between">
+        <div className="p-6 border-b border-white/10 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="p-2 bg-indigo-600 rounded-xl text-white shadow-lg shadow-indigo-550/20">
               <Zap className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="font-bold text-sm tracking-tight text-slate-900 dark:text-white leading-none">
+              <h1 className="font-bold text-sm tracking-tight text-slate-900 leading-none">
                 Freelancer CRM
               </h1>
-              <span className="text-[10px] text-slate-405 dark:text-slate-400 mt-1 block">Operations Center</span>
+              <span className="text-[10px] text-slate-405 mt-1 block">Operations Center</span>
             </div>
           </div>
         </div>
 
         {/* Dynamic Sync & plan badge */}
-        <div className="px-5 py-3 border-b border-white/10 dark:border-white/5 flex items-center justify-between">
+        <div className="px-5 py-3 border-b border-white/10 flex items-center justify-between">
           <div className="flex items-center gap-2">
             {cloudSyncStatus === "synced" && (
               <>
                 <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
-                <span className="text-[10px] text-emerald-600 dark:text-emerald-450 font-bold uppercase tracking-wider">
+                <span className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider">
                   Cloud Synced
                 </span>
               </>
@@ -502,8 +502,8 @@ export default function App() {
                 }}
                 className={`w-full flex items-center gap-3 py-2 px-3.5 rounded-xl text-xs font-bold transition-all ${
                   isActive
-                    ? "bg-indigo-600/15 dark:bg-white/10 text-indigo-650 dark:text-white border border-indigo-500/20 dark:border-white/10 shadow-sm"
-                    : "text-slate-500 dark:text-slate-400 hover:bg-black/5 dark:hover:bg-white/5"
+                    ? "bg-indigo-600/15 text-indigo-650 border border-indigo-500/20 shadow-sm"
+                    : "text-slate-500 hover:bg-black/5"
                 }`}
               >
                 <Icon size={16} />
@@ -526,7 +526,7 @@ export default function App() {
             <Zap className="w-4 h-4" />
           </div>
           <div>
-            <span className="font-extrabold text-xs tracking-tight text-slate-900 dark:text-white block">
+            <span className="font-extrabold text-xs tracking-tight text-slate-900 block">
               Freelancer CRM
             </span>
             <span className="text-[9px] text-slate-450">Ops Console</span>
@@ -544,7 +544,7 @@ export default function App() {
           )}
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-50 text-slate-500"
+            className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-500"
           >
             {mobileMenuOpen ? <X size={16} /> : <Menu size={16} />}
           </button>
@@ -572,7 +572,7 @@ export default function App() {
                     setMobileMenuOpen(false);
                   }}
                   className={`w-full flex items-center gap-3.5 py-2.5 px-4 rounded-xl text-xs font-bold transition-all ${
-                    isActive ? "bg-indigo-650 text-white" : "text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800"
+                    isActive ? "bg-indigo-650 text-white" : "text-slate-500 hover:bg-slate-50"
                   }`}
                 >
                   <Icon size={16} />
@@ -587,12 +587,12 @@ export default function App() {
       {/* Primary Application Body */}
       <main className="flex-1 flex flex-col p-6 sm:p-8 max-w-7xl mx-auto w-full space-y-6 overflow-hidden z-10">
         {/* Dynamic Control Top Search and Meta metrics */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-black/5 dark:border-white/10 pb-5 no-print">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-black/5 pb-5 no-print">
           <div>
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
               {activeView}
             </h1>
-            <p className="text-xs text-slate-450 dark:text-slate-400 mt-1 font-medium">
+            <p className="text-xs text-slate-450 mt-1 font-medium">
               {profile.businessName ? `${profile.businessName} Portal` : "Freelancer Workspace Dashboard"}{" "}
               &middot; Account ID: <span className="font-mono text-[10px]">{profile.id.substring(0, 8)}</span>
             </p>
@@ -607,7 +607,7 @@ export default function App() {
                 placeholder={`Search ${activeView.toLowerCase()}...`}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full text-xs py-2 px-3 pl-9 glass-input rounded-xl focus:outline-none text-slate-800 dark:text-slate-200"
+                className="w-full text-xs py-2 px-3 pl-9 glass-input rounded-xl focus:outline-none text-slate-800"
               />
             </div>
           )}
@@ -716,7 +716,7 @@ export default function App() {
         isOpen={upgradeOpen}
         onClose={() => setUpgradeOpen(false)}
         profile={profile}
-        onUpgradeSuccess={(newPlan) => handleUpdateProfile({ plan: newPlan })}
+        onUpgradeSuccess={(newPlan, subDetails) => handleUpdateProfile({ plan: newPlan, ...subDetails })}
         triggerReason={upgradeReason}
       />
     </div>

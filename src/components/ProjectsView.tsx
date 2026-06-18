@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Plus, Check, X, Edit3, Trash2, Calendar, Coins, FolderKanban, FolderGit2, ArrowRight, LayoutGrid, CalendarDays } from "lucide-react";
+import { Plus, Check, X, Edit3, Trash2, Calendar, Coins, FolderKanban, FolderGit2, ArrowRight, LayoutGrid, CalendarDays, AlertCircle } from "lucide-react";
 import { Project, Client, FreelancerProfile } from "../types";
 import { formatCurrency } from "../utils";
 
@@ -27,6 +27,7 @@ export default function ProjectsView({
 }: ProjectsViewProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [showClientWarning, setShowClientWarning] = useState(false);
 
   const [viewMode, setViewMode] = useState<"grid" | "timeline">("grid");
 
@@ -106,7 +107,7 @@ export default function ProjectsView({
 
   const handleOpenAdd = () => {
     if (clients.length === 0) {
-      console.warn("Please map at least one Client before creating a project contract.");
+      setShowClientWarning(true);
       return;
     }
     if (profile.plan === "Free" && projects.length >= 10) {
@@ -186,7 +187,7 @@ export default function ProjectsView({
                 className={`px-3 py-1.5 rounded-xl text-xs font-semibold backdrop-blur-sm transition-all cursor-pointer ${
                   filterStatus === tab
                     ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/15"
-                    : "glass-item border border-white/20 dark:border-white/5 text-slate-500 hover:text-slate-800 dark:hover:text-slate-100"
+                    : "glass-item border border-white/20 text-slate-500 hover:text-slate-800"
                 }`}
               >
                 {tab} ({tab === "All" ? projects.length : projects.filter((p) => p.status === tab).length})
@@ -194,16 +195,16 @@ export default function ProjectsView({
             ))}
           </div>
 
-          <div className="h-5 w-[1px] bg-black/10 dark:bg-white/10 hidden md:block" />
+          <div className="h-5 w-[1px] bg-black/10 hidden md:block" />
 
           {/* View Mode Toggle */}
-          <div className="flex items-center bg-black/5 dark:bg-white/5 p-1 rounded-xl border border-black/5 dark:border-white/5">
+          <div className="flex items-center bg-black/5 p-1 rounded-xl border border-black/5">
             <button
               onClick={() => setViewMode("grid")}
               className={`p-1 px-2.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
                 viewMode === "grid"
                   ? "bg-indigo-600 text-white shadow-md"
-                  : "text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                  : "text-slate-400 hover:text-slate-700"
               }`}
             >
               <LayoutGrid size={12} />
@@ -214,7 +215,7 @@ export default function ProjectsView({
               className={`p-1 px-2.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
                 viewMode === "timeline"
                   ? "bg-indigo-600 text-white shadow-md"
-                  : "text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                  : "text-slate-400 hover:text-slate-700"
               }`}
             >
               <CalendarDays size={12} />
@@ -249,8 +250,8 @@ export default function ProjectsView({
               exit={{ scale: 0.95, opacity: 0 }}
               className="w-full max-w-md glass-modal rounded-2xl shadow-xl overflow-hidden"
             >
-              <div className="p-5 border-b border-white/10 dark:border-white/5 flex items-center justify-between">
-                <h3 className="font-bold text-sm text-slate-800 dark:text-slate-200">
+              <div className="p-5 border-b border-white/10 flex items-center justify-between">
+                <h3 className="font-bold text-sm text-slate-800">
                   {isAdding ? "Initiate Project Contract" : `Edit Project: ${editingProject?.title}`}
                 </h3>
                 <button
@@ -258,7 +259,7 @@ export default function ProjectsView({
                     setIsAdding(false);
                     setEditingProject(null);
                   }}
-                  className="p-1 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600"
+                  className="p-1 rounded-full hover:bg-slate-200 text-slate-400 hover:text-slate-600"
                 >
                   <X size={16} />
                 </button>
@@ -272,7 +273,7 @@ export default function ProjectsView({
                     required
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
-                    className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none"
+                    className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 focus:outline-none"
                     placeholder="e.g. Website Redesign v2"
                   />
                 </div>
@@ -282,7 +283,7 @@ export default function ProjectsView({
                   <select
                     value={clientId}
                     onChange={(e) => setClientId(e.target.value)}
-                    className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none"
+                    className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 focus:outline-none"
                   >
                     {clients.map((c) => (
                       <option key={c.id} value={c.id}>
@@ -305,7 +306,7 @@ export default function ProjectsView({
                         required
                         value={budget || ""}
                         onChange={(e) => setBudget(Number(e.target.value))}
-                        className="w-full py-2 pl-7 pr-3 glass-input rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none font-mono text-xs"
+                        className="w-full py-2 pl-7 pr-3 glass-input rounded-xl text-slate-800 focus:outline-none font-mono text-xs"
                         placeholder="2500"
                       />
                     </div>
@@ -322,7 +323,7 @@ export default function ProjectsView({
                           setProgress(100);
                         }
                       }}
-                      className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none text-xs"
+                      className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 focus:outline-none text-xs"
                     >
                       <option value="Not Started">Not Started</option>
                       <option value="In Progress">In Progress</option>
@@ -340,7 +341,7 @@ export default function ProjectsView({
                       required
                       value={startDate}
                       onChange={(e) => setStartDate(e.target.value)}
-                      className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none text-xs"
+                      className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 focus:outline-none text-xs"
                     />
                   </div>
 
@@ -354,15 +355,15 @@ export default function ProjectsView({
                         setEndDate(e.target.value);
                         setDeadline(e.target.value);
                       }}
-                      className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none text-xs"
+                      className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 focus:outline-none text-xs"
                     />
                   </div>
                 </div>
 
-                <div className="space-y-1.5 p-3 bg-black/5 dark:bg-white/5 rounded-xl border border-black/5 dark:border-white/5">
+                <div className="space-y-1.5 p-3 bg-black/5 rounded-xl border border-black/5">
                   <div className="flex justify-between items-center">
                     <label className="block text-xs font-bold text-slate-500">Visual Project Progress</label>
-                    <span className="text-xs font-mono font-black text-indigo-650 dark:text-indigo-400">{progress}%</span>
+                    <span className="text-xs font-mono font-black text-indigo-650">{progress}%</span>
                   </div>
                   <div className="flex items-center gap-3">
                     <input
@@ -379,13 +380,13 @@ export default function ProjectsView({
                           setStatus("In Progress");
                         }
                       }}
-                      className="flex-1 accent-indigo-605 cursor-pointer h-1 bg-black/10 dark:bg-white/10 rounded-lg appearance-none"
+                      className="flex-1 accent-indigo-605 cursor-pointer h-1 bg-black/10 rounded-lg appearance-none"
                     />
                     <div className="flex gap-1 shrink-0">
                       <button
                         type="button"
                         onClick={() => setProgress(0)}
-                        className="px-1.5 py-0.5 bg-black/10 dark:bg-white/10 border border-white/10 dark:border-black/10 rounded text-[9px] font-bold hover:bg-indigo-600 hover:text-white transition-colors cursor-pointer"
+                        className="px-1.5 py-0.5 bg-black/10 border border-white/10 rounded text-[9px] font-bold hover:bg-indigo-600 hover:text-white transition-colors cursor-pointer"
                       >
                         0%
                       </button>
@@ -395,7 +396,7 @@ export default function ProjectsView({
                           setProgress(50);
                           if (status === "Not Started") setStatus("In Progress");
                         }}
-                        className="px-1.5 py-0.5 bg-black/10 dark:bg-white/10 border border-white/10 dark:border-black/10 rounded text-[9px] font-bold hover:bg-indigo-600 hover:text-white transition-colors cursor-pointer"
+                        className="px-1.5 py-0.5 bg-black/10 border border-white/10 rounded text-[9px] font-bold hover:bg-indigo-600 hover:text-white transition-colors cursor-pointer"
                       >
                         50%
                       </button>
@@ -405,7 +406,7 @@ export default function ProjectsView({
                           setProgress(100);
                           setStatus("Completed");
                         }}
-                        className="px-1.5 py-0.5 bg-black/10 dark:bg-white/10 border border-white/10 dark:border-black/10 rounded text-[9px] font-bold hover:bg-indigo-600 hover:text-white transition-colors cursor-pointer"
+                        className="px-1.5 py-0.5 bg-black/10 border border-white/10 rounded text-[9px] font-bold hover:bg-indigo-600 hover:text-white transition-colors cursor-pointer"
                       >
                         100%
                       </button>
@@ -419,7 +420,7 @@ export default function ProjectsView({
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
                     rows={3}
-                    className="w-full py-2 px-3 glass-input rounded-xl text-slate-850 dark:text-slate-200 focus:outline-none resize-none"
+                    className="w-full py-2 px-3 glass-input rounded-xl text-slate-850 focus:outline-none resize-none"
                     placeholder="Deliverables: Figma files, hosting setup, git repo hand over..."
                   />
                 </div>
@@ -431,7 +432,7 @@ export default function ProjectsView({
                       setIsAdding(false);
                       setEditingProject(null);
                     }}
-                    className="flex-1 py-2 border border-slate-200 dark:border-slate-800 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800/40 rounded-xl text-xs font-bold transition-colors"
+                    className="flex-1 py-2 border border-slate-200 text-slate-500 hover:bg-slate-50 rounded-xl text-xs font-bold transition-colors"
                   >
                     Cancel
                   </button>
@@ -451,9 +452,9 @@ export default function ProjectsView({
       {/* Empty State */}
       {filteredProjects.length === 0 ? (
         <div className="flex flex-col items-center justify-center p-12 glass-panel rounded-2xl text-center">
-          <FolderKanban className="w-12 h-12 text-slate-300 dark:text-slate-600 mb-3" />
-          <h4 className="font-bold text-slate-800 dark:text-slate-200">No projects listed</h4>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm">
+          <FolderKanban className="w-12 h-12 text-slate-300 mb-3" />
+          <h4 className="font-bold text-slate-800">No projects listed</h4>
+          <p className="text-xs text-slate-500 mt-1 max-w-sm">
             {projects.length === 0
               ? "You haven't initialized any deliverables or customer task agreements. Start tracking work contracts here."
               : "Refine your keyword search queries or status filters to view active deliverables."}
@@ -470,13 +471,13 @@ export default function ProjectsView({
       ) : viewMode === "timeline" ? (
         /* Timeline visual component */
         <div className="glass-panel p-5 rounded-2xl space-y-4 overflow-hidden shadow-sm">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between no-print border-b border-black/5 dark:border-white/5 pb-3 gap-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between no-print border-b border-black/5 pb-3 gap-2">
             <div>
-              <h3 className="font-extrabold text-sm text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+              <h3 className="font-extrabold text-sm text-slate-800 flex items-center gap-1.5">
                 <CalendarDays size={16} className="text-indigo-500" />
                 <span>Project Timeline & Progress Gantt</span>
               </h3>
-              <p className="text-[10px] sm:text-[11px] text-slate-450 dark:text-slate-400 mt-0.5">
+              <p className="text-[10px] sm:text-[11px] text-slate-450 mt-0.5">
                 Visual tracking of work agreements duration spans and deliverables completion states.
               </p>
             </div>
@@ -501,16 +502,16 @@ export default function ProjectsView({
             <div className="min-w-[760px] relative pb-2">
               
               {/* Scale headers: Month labels */}
-              <div className="h-10 flex border border-black/5 dark:border-white/5 bg-black/5 dark:bg-white/5 rounded-t-xl overflow-hidden font-mono text-[10px] font-bold text-slate-400">
+              <div className="h-10 flex border border-black/5 bg-black/5 rounded-t-xl overflow-hidden font-mono text-[10px] font-bold text-slate-400">
                 {/* Spacer */}
-                <div className="w-[200px] border-r border-black/5 dark:border-white/5 shrink-0 flex items-center pl-4 font-sans text-xs text-slate-600 dark:text-slate-400 font-extrabold">
+                <div className="w-[200px] border-r border-black/5 shrink-0 flex items-center pl-4 font-sans text-xs text-slate-600 font-extrabold">
                   Project Workspace
                 </div>
                 <div className="flex-1 relative h-full">
                   {months.map((m, idx) => (
                     <div
                       key={idx}
-                      className="absolute top-0 bottom-0 border-r border-black/5 dark:border-white/5 flex items-center justify-center text-center px-1 truncate"
+                      className="absolute top-0 bottom-0 border-r border-black/5 flex items-center justify-center text-center px-1 truncate"
                       style={{ left: `${m.offset}%`, width: `${m.width}%` }}
                     >
                       {m.name}
@@ -520,13 +521,13 @@ export default function ProjectsView({
               </div>
 
               {/* Lanes content containing horizontal bars */}
-              <div className="relative divide-y divide-black/5 dark:divide-white/5 border-x border-b border-black/5 dark:border-white/5 rounded-b-xl overflow-hidden">
+              <div className="relative divide-y divide-black/5 border-x border-b border-black/5 rounded-b-xl overflow-hidden">
                 {/* Vertical dash lines matching the months */}
                 <div className="absolute top-0 bottom-0 left-[200px] right-0 pointer-events-none z-0">
                   {months.map((m, idx) => (
                     <div
                       key={idx}
-                      className="absolute top-0 bottom-0 border-r border-black/10 dark:border-white/5 border-dashed"
+                      className="absolute top-0 bottom-0 border-r border-black/10 border-dashed"
                       style={{ left: `${m.offset}%` }}
                     />
                   ))}
@@ -543,11 +544,11 @@ export default function ProjectsView({
                   const isOverdue = p.deadline && new Date(p.deadline) < new Date() && p.status !== "Completed";
 
                   return (
-                    <div key={p.id} className="flex h-16 relative z-10 hover:bg-black/5 dark:hover:bg-white/5 items-center">
-                      <div className="w-[200px] shrink-0 pr-4 pl-4 flex flex-col justify-center border-r border-black/5 dark:border-white/5 h-full z-10 bg-slate-50 dark:bg-slate-900/90 whitespace-nowrap overflow-hidden">
+                    <div key={p.id} className="flex h-16 relative z-10 hover:bg-black/5 items-center">
+                      <div className="w-[200px] shrink-0 pr-4 pl-4 flex flex-col justify-center border-r border-black/5 h-full z-10 bg-slate-50 whitespace-nowrap overflow-hidden">
                         <h4
                           onClick={() => handleStartEdit(p)}
-                          className="font-bold text-xs text-slate-800 dark:text-slate-200 truncate hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer"
+                          className="font-bold text-xs text-slate-800 truncate hover:text-indigo-600 cursor-pointer"
                         >
                           {p.title}
                         </h4>
@@ -561,10 +562,10 @@ export default function ProjectsView({
                           onClick={() => handleStartEdit(p)}
                           className={`absolute h-8 rounded-xl flex items-center shadow-sm select-none cursor-pointer group/bar transition-all overflow-hidden border ${
                             p.status === "Completed"
-                              ? "bg-emerald-500/10 border-emerald-500/30 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-350"
+                              ? "bg-emerald-500/10 border-emerald-500/30 hover:bg-emerald-500/20 text-emerald-700"
                               : p.status === "On Hold"
-                              ? "bg-amber-500/10 border-amber-500/30 hover:bg-amber-500/20 text-amber-700 dark:text-amber-350"
-                              : "bg-indigo-500/10 border-indigo-500/30 hover:bg-indigo-600/20 text-indigo-700 dark:text-indigo-305"
+                              ? "bg-amber-500/10 border-amber-500/30 hover:bg-amber-500/20 text-amber-700"
+                              : "bg-indigo-500/10 border-indigo-500/30 hover:bg-indigo-600/20 text-indigo-700"
                           }`}
                           style={{ left: `${leftP}%`, width: `${widthP}%` }}
                         >
@@ -586,7 +587,7 @@ export default function ProjectsView({
                               <span className="text-[9px] font-normal text-slate-400 font-sans">({pStart.toLocaleDateString(undefined, {month: 'short', day: 'numeric'})} - {pEnd.toLocaleDateString(undefined, {month: 'short', day: 'numeric'})})</span>
                             </span>
                             <span className={`text-[8px] font-black px-1.5 py-0.2 rounded shrink-0 uppercase tracking-wider ${
-                              isOverdue ? "bg-red-500/20 text-red-600 animate-pulse animate-duration-1000" : "bg-black/5 dark:bg-white/10"
+                              isOverdue ? "bg-red-500/20 text-red-600 animate-pulse animate-duration-1000" : "bg-black/5"
                             }`}>
                               {isOverdue ? "Overdue" : p.status}
                             </span>
@@ -617,36 +618,36 @@ export default function ProjectsView({
                 <div>
                   <div className="flex items-start justify-between gap-2 mb-3">
                     <div>
-                      <h4 className="font-bold text-slate-800 dark:text-slate-150 text-sm line-clamp-1">
+                      <h4 className="font-bold text-slate-800 text-sm line-clamp-1">
                         {p.title}
                       </h4>
-                      <span className="text-[11px] font-medium text-indigo-650 dark:text-indigo-400 mt-0.5 block line-clamp-1">
+                      <span className="text-[11px] font-medium text-indigo-650 mt-0.5 block line-clamp-1">
                         {getClientMeta(p.clientId)}
                       </span>
                     </div>
                     <span className={`text-[9px] uppercase font-bold px-2 py-0.5 rounded-full ${
                       p.status === "Completed"
-                        ? "bg-emerald-500/10 text-emerald-650 dark:text-emerald-400"
+                        ? "bg-emerald-500/10 text-emerald-650"
                         : p.status === "In Progress"
-                        ? "bg-sky-500/10 text-sky-655 dark:text-sky-305"
+                        ? "bg-sky-500/10 text-sky-655"
                         : p.status === "On Hold"
-                        ? "bg-amber-500/10 text-amber-655 dark:text-amber-400"
+                        ? "bg-amber-500/10 text-amber-655"
                         : "bg-slate-500/10 text-slate-400"
                     }`}>
                       {p.status}
                     </span>
                   </div>
 
-                  <div className="space-y-3 border-t border-black/5 dark:border-white/5 pt-3 mb-4 text-xs">
+                  <div className="space-y-3 border-t border-black/5 pt-3 mb-4 text-xs">
                     {/* Visual Progress Slider gauge inside the card */}
                     <div className="space-y-1">
                       <div className="flex justify-between items-center text-[10px]">
                         <span className="text-slate-450 font-medium">Agreement Progress</span>
-                        <strong className="text-indigo-600 dark:text-indigo-450 font-mono font-bold">
+                        <strong className="text-indigo-600 font-mono font-bold">
                           {p.progress || 0}%
                         </strong>
                       </div>
-                      <div className="w-full bg-black/10 dark:bg-white/10 h-1.5 rounded-full overflow-hidden">
+                      <div className="w-full bg-black/10 h-1.5 rounded-full overflow-hidden">
                         <div
                           className={`h-full pointer-events-none rounded-full transition-all duration-500 ${
                             p.status === "Completed"
@@ -662,14 +663,14 @@ export default function ProjectsView({
 
                     <div className="flex items-center justify-between text-slate-400">
                       <span>Total Value:</span>
-                      <strong className="text-slate-800 dark:text-slate-200 font-mono font-bold">
+                      <strong className="text-slate-800 font-mono font-bold">
                         {formatCurrency(p.budget, profile.currency)}
                       </strong>
                     </div>
 
                     <div className="flex items-center justify-between">
                       <span className="text-slate-400">Project Duration:</span>
-                      <strong className="text-[10px] sm:text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-0.5">
+                      <strong className="text-[10px] sm:text-[11px] font-bold text-slate-700 flex items-center gap-0.5">
                         <Calendar size={11} className="text-indigo-505 shrink-0 mr-0.5" />
                         <span>{pStart.toLocaleDateString(undefined, {month: 'short', day: 'numeric'})}</span>
                         <span className="text-slate-400 font-normal mx-1">to</span>
@@ -680,17 +681,17 @@ export default function ProjectsView({
                     </div>
 
                     {p.notes && (
-                      <p className="text-[11px] text-slate-450 bg-slate-500/5 dark:bg-black/20 p-2 rounded-lg italic line-clamp-2 mt-2">
+                      <p className="text-[11px] text-slate-450 bg-slate-500/5 p-2 rounded-lg italic line-clamp-2 mt-2">
                         "{p.notes}"
                       </p>
                     )}
                   </div>
                 </div>
 
-                <div className="flex justify-end gap-1.5 border-t border-black/5 dark:border-white/5 pt-3 opacity-90 group-hover:opacity-100 transition-opacity">
+                <div className="flex justify-end gap-1.5 border-t border-black/5 pt-3 opacity-90 group-hover:opacity-100 transition-opacity">
                   <button
                     onClick={() => handleStartEdit(p)}
-                    className="p-1 px-2 border border-slate-205 dark:border-slate-800 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/40 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer"
+                    className="p-1 px-2 border border-slate-205 text-slate-500 hover:text-slate-700 hover:bg-slate-50 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer"
                   >
                     <Edit3 size={11} />
                     <span>Edit</span>
@@ -701,7 +702,7 @@ export default function ProjectsView({
                         onDeleteProject(p.id);
                       }
                     }}
-                    className="p-1 px-2 border border-red-200 dark:border-red-950 text-red-550 hover:text-white hover:bg-red-500 dark:hover:bg-red-900/40 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer"
+                    className="p-1 px-2 border border-red-200 text-red-550 hover:text-white hover:bg-red-500 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer"
                   >
                     <Trash2 size={11} />
                     <span>Delete</span>
@@ -712,6 +713,40 @@ export default function ProjectsView({
           })}
         </div>
       )}
+
+      {/* Client Warning Modal Overlay */}
+      <AnimatePresence>
+        {showClientWarning && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="w-full max-w-sm bg-white rounded-2xl shadow-xl overflow-hidden p-6 border border-slate-100"
+            >
+              <div className="flex flex-col items-center text-center">
+                <div className="p-3 bg-indigo-50 text-indigo-600 rounded-full mb-4">
+                  <AlertCircle size={24} />
+                </div>
+                <h3 className="font-extrabold text-slate-900 text-sm mb-2">
+                  Client Profile Required
+                </h3>
+                <p className="text-xs text-slate-500 mb-6 leading-relaxed">
+                  Please configure at least one Client profile first before launching active project contracts.
+                </p>
+                <div className="flex gap-2 w-full">
+                  <button
+                    onClick={() => setShowClientWarning(false)}
+                    className="flex-1 py-2 text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-colors cursor-pointer"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

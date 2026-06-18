@@ -7,6 +7,10 @@ export interface FreelancerProfile {
   plan: "Free" | "Pro";
   onboardingCompleted: boolean;
   createdAt: string;
+  subscriptionStatus?: "active" | "cancelled" | "inactive";
+  subscriptionRegion?: "IN" | "US" | "Other" | string;
+  subscriptionMethod?: "UPI" | "Stripe" | string;
+  subscriptionRenewsAt?: string;
 }
 
 export interface Client {

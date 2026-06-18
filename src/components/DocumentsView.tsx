@@ -106,16 +106,16 @@ export default function DocumentsView({
       {!isPro && (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-transparent backdrop-blur-[2.5px] p-6 text-center">
           <div className="p-6 glass-modal rounded-3xl shadow-2xl max-w-sm flex flex-col items-center">
-            <div className="w-16 h-16 bg-violet-100 dark:bg-violet-950/40 rounded-2xl flex items-center justify-center text-violet-650 dark:text-violet-400 mb-4 border border-violet-200 dark:border-violet-855 animate-pulse">
+            <div className="w-16 h-16 bg-violet-100 rounded-2xl flex items-center justify-center text-violet-650 mb-4 border border-violet-200 animate-pulse">
               <FolderLock className="w-8 h-8" />
             </div>
             <span className="text-[10px] tracking-widest font-extrabold uppercase text-indigo-505 block mb-1">
               PRO MODULE UNTIL PREMIUM
             </span>
-            <h3 className="text-lg font-black text-slate-850 dark:text-white leading-tight">
+            <h3 className="text-lg font-black text-slate-850 leading-tight">
               Secure Document Vault Gated
             </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+            <p className="text-xs text-slate-500 mt-2">
               Unlock contract backups, deliverables archiving, and direct browser-native invoice client assets uploading.
             </p>
 
@@ -161,7 +161,7 @@ export default function DocumentsView({
               className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all flex flex-col items-center justify-center min-h-[160px] ${
                 dragActive
                   ? "border-indigo-500 bg-indigo-500/10"
-                  : "border-black/10 dark:border-white/10 bg-black/5 hover:border-indigo-500 hover:bg-black/10"
+                  : "border-black/10 bg-black/5 hover:border-indigo-500 hover:bg-black/10"
               }`}
             >
               <input
@@ -172,7 +172,7 @@ export default function DocumentsView({
                 accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg,.zip,.json,.xlsx"
               />
               <FolderUp size={24} className="text-slate-400 mb-2" />
-              <strong className="text-xs text-slate-800 dark:text-slate-200">
+              <strong className="text-xs text-slate-800">
                 {isUploading ? "Uploading..." : "Select or Drop Local Work File"}
               </strong>
               <span className="text-[10px] text-slate-400 mt-1 max-w-[150px] leading-tight block">
@@ -184,7 +184,7 @@ export default function DocumentsView({
           {/* Documents Lists Grid Columns */}
           <div className="md:col-span-2 space-y-4">
             <div className="p-5 glass-panel rounded-2xl min-h-[300px]">
-              <h3 className="font-bold text-sm text-slate-800 dark:text-slate-200 uppercase tracking-wider mb-4 flex items-center gap-1.5">
+              <h3 className="font-bold text-sm text-slate-800 uppercase tracking-wider mb-4 flex items-center gap-1.5">
                 <FileCheck size={16} className="text-indigo-500" />
                 <span>Operational Vault Ledger</span>
                 <span className="text-xs font-normal text-slate-400 ml-auto leading-none">
@@ -193,24 +193,24 @@ export default function DocumentsView({
               </h3>
 
               {documents.length === 0 ? (
-                <div className="flex flex-col items-center justify-center p-12 text-center text-xs text-slate-400 dark:text-slate-500 min-h-[200px]">
-                  <FileText className="w-10 h-10 text-slate-300 dark:text-slate-700 mb-2 animate-bounce" />
+                <div className="flex flex-col items-center justify-center p-12 text-center text-xs text-slate-400 min-h-[200px]">
+                  <FileText className="w-10 h-10 text-slate-300 mb-2 animate-bounce" />
                   <span>No documents currently listed. Drag contract files or receipts to build backups.</span>
                 </div>
               ) : (
-                <div className="divide-y divide-black/5 dark:divide-white/5 text-xs">
+                <div className="divide-y divide-black/5 text-xs">
                   {documents.map((doc) => (
                     <div key={doc.id} className="py-3 flex items-center justify-between gap-4 group">
                       <div className="flex items-start gap-2.5 min-w-0">
-                        <div className="p-2 bg-black/5 dark:bg-white/5 border border-white/20 dark:border-white/5 text-indigo-500 rounded-xl shrink-0 mt-0.5">
+                        <div className="p-2 bg-black/5 border border-white/20 text-indigo-500 rounded-xl shrink-0 mt-0.5">
                           <FileText className="w-4 h-4" />
                         </div>
                         <div className="min-w-0">
-                          <h4 className="font-bold text-slate-805 dark:text-slate-150 truncate max-w-md block leading-snug">
+                          <h4 className="font-bold text-slate-805 truncate max-w-md block leading-snug">
                             {doc.title}
                           </h4>
                           <div className="flex flex-wrap items-center gap-2 mt-1 text-[10px] text-slate-450 font-medium leading-none">
-                            <span className="bg-black/5 dark:bg-white/5 font-bold text-indigo-650 dark:text-indigo-400 px-1.5 py-0.5 rounded-md">
+                            <span className="bg-black/5 font-bold text-indigo-650 px-1.5 py-0.5 rounded-md">
                               {doc.category}
                             </span>
                             <span>{doc.fileSize}</span>
@@ -225,7 +225,7 @@ export default function DocumentsView({
                       <div className="flex items-center gap-1 shrink-0 opacity-80 group-hover:opacity-100 transition-opacity">
                         <button
                           onClick={() => handleDownload(doc)}
-                          className="p-1 px-2 border border-white/10 dark:border-white/5 hover:bg-black/10 text-slate-500 hover:text-indigo-600 rounded-lg text-[10px] font-bold flex items-center gap-0.5 transition-colors cursor-pointer"
+                          className="p-1 px-2 border border-white/10 hover:bg-black/10 text-slate-500 hover:text-indigo-600 rounded-lg text-[10px] font-bold flex items-center gap-0.5 transition-colors cursor-pointer"
                         >
                           <Download size={11} />
                           <span>Get File</span>
@@ -255,14 +255,14 @@ export default function DocumentsView({
         <div className="pointer-events-none select-none blur-[1.5px] opacity-15 space-y-4">
           <div className="p-5 glass-panel text-xs">
             <h4 className="font-bold text-slate-450 mb-3 uppercase tracking-wider">Example Documents Locked Ledger</h4>
-            <div className="divide-y divide-black/5 dark:divide-white/5">
+            <div className="divide-y divide-black/5">
               {sampleMockDocs.map((item, id) => (
                 <div key={id} className="py-2.5 flex items-center justify-between text-xs">
                   <div className="flex items-center gap-2">
                     <FileText size={15} className="text-slate-400" />
-                    <span className="font-bold text-slate-700 dark:text-slate-300">{item.title}</span>
+                    <span className="font-bold text-slate-700">{item.title}</span>
                   </div>
-                  <span className="bg-black/5 dark:bg-white/5 px-1.5 py-0.5 rounded-md text-[9px] text-slate-400 font-bold">{item.category}</span>
+                  <span className="bg-black/5 px-1.5 py-0.5 rounded-md text-[9px] text-slate-400 font-bold">{item.category}</span>
                 </div>
               ))}
             </div>

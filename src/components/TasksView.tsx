@@ -64,7 +64,7 @@ export default function TasksView({
       {/* Task Creation & Filters (Sidebar-ish) */}
       <div className="space-y-6">
         <div className="p-5 rounded-2xl glass-panel">
-          <h3 className="font-bold text-sm text-slate-805 dark:text-slate-200 uppercase tracking-wider mb-4 flex items-center gap-2">
+          <h3 className="font-bold text-sm text-slate-805 uppercase tracking-wider mb-4 flex items-center gap-2">
             <KanbanSquare size={16} className="text-indigo-500" />
             <span>Create Action Task</span>
           </h3>
@@ -77,7 +77,7 @@ export default function TasksView({
                 required
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 dark:text-slate-200 text-xs focus:outline-none"
+                className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 text-xs focus:outline-none"
                 placeholder="e.g. Write design brief / upload proposal..."
               />
             </div>
@@ -87,7 +87,7 @@ export default function TasksView({
               <select
                 value={projectId}
                 onChange={(e) => setProjectId(e.target.value)}
-                className="w-full py-2 px-3 glass-input rounded-xl text-slate-850 dark:text-slate-200 text-xs focus:outline-none"
+                className="w-full py-2 px-3 glass-input rounded-xl text-slate-850 text-xs focus:outline-none"
               >
                 <option value="">Independent Task</option>
                 {projects.map((p) => (
@@ -105,7 +105,7 @@ export default function TasksView({
                   type="date"
                   value={dueDate}
                   onChange={(e) => setDueDate(e.target.value)}
-                  className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 dark:text-slate-200 text-xs focus:outline-none"
+                  className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 text-xs focus:outline-none"
                 />
               </div>
 
@@ -114,7 +114,7 @@ export default function TasksView({
                 <select
                   value={priority}
                   onChange={(e) => setPriority(e.target.value as any)}
-                  className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 dark:text-slate-200 text-xs focus:outline-none"
+                  className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 text-xs focus:outline-none"
                 >
                   <option value="Low">Low</option>
                   <option value="Medium">Medium</option>
@@ -135,7 +135,7 @@ export default function TasksView({
 
         {/* Filters Panel */}
         <div className="p-5 rounded-2xl glass-panel text-xs">
-          <h4 className="font-bold text-slate-800 dark:text-slate-200 mb-3 uppercase tracking-wider">
+          <h4 className="font-bold text-slate-800 mb-3 uppercase tracking-wider">
             Quick Filters
           </h4>
           <div className="space-y-3">
@@ -176,43 +176,43 @@ export default function TasksView({
       <div className="lg:col-span-2 space-y-4">
         {/* Active Checklist */}
         <div className="p-5 rounded-2xl glass-panel">
-          <div className="flex items-center justify-between border-b border-black/5 dark:border-white/5 pb-3 mb-4">
-            <h3 className="font-bold text-sm text-slate-800 dark:text-slate-250 flex items-center gap-2">
+          <div className="flex items-center justify-between border-b border-black/5 pb-3 mb-4">
+            <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
               <span>Todo Checklist</span>
-              <span className="text-xs bg-indigo-500/10 px-2 py-0.5 rounded-full text-indigo-600 dark:text-indigo-300">
+              <span className="text-xs bg-indigo-500/10 px-2 py-0.5 rounded-full text-indigo-600">
                 {activeTasks.length} left
               </span>
             </h3>
           </div>
 
           {activeTasks.length === 0 ? (
-            <div className="text-center py-12 text-slate-400 dark:text-slate-500 text-xs flex flex-col items-center justify-center">
+            <div className="text-center py-12 text-slate-400 text-xs flex flex-col items-center justify-center">
               <Check className="w-8 h-8 text-indigo-400/80 mb-2 border border-indigo-200/50 p-1 rounded-full animate-bounce" />
               <span>Excellent! No outstanding tasks listed for matching criteria.</span>
             </div>
           ) : (
-            <div className="divide-y divide-black/5 dark:divide-white/5">
+            <div className="divide-y divide-black/5">
               {activeTasks.map((t) => (
                 <div key={t.id} className="flex items-start justify-between gap-3 py-3 group">
                   <div className="flex items-start gap-3">
                     <button
                       onClick={() => onToggleTask(t.id, true)}
-                      className="p-1 px-1.5 border border-white/20 dark:border-white/5 hover:text-indigo-600 hover:border-indigo-500 rounded-lg transition-colors mt-0.5 cursor-pointer"
+                      className="p-1 px-1.5 border border-white/20 hover:text-indigo-600 hover:border-indigo-500 rounded-lg transition-colors mt-0.5 cursor-pointer"
                     >
                       <Square size={15} />
                     </button>
                     <div>
-                      <p className="text-sm font-bold text-slate-800 dark:text-slate-200 leading-tight">
+                      <p className="text-sm font-bold text-slate-800 leading-tight">
                         {t.title}
                       </p>
                       <div className="flex flex-wrap items-center gap-2 mt-1.5 text-[10px] text-slate-400 font-medium">
                         {t.projectId && (
-                          <span className="bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 px-1.5 py-0.5 rounded-md">
+                          <span className="bg-indigo-500/10 text-indigo-600 px-1.5 py-0.5 rounded-md">
                             {getProjectTitle(t.projectId)}
                           </span>
                         )}
                         {t.dueDate && (
-                          <span className="flex items-center gap-1 text-slate-450 dark:text-slate-500">
+                          <span className="flex items-center gap-1 text-slate-450">
                             <Calendar size={11} />
                             <span>{new Date(t.dueDate).toLocaleDateString()}</span>
                           </span>
@@ -245,11 +245,11 @@ export default function TasksView({
         {/* Completed Checklist */}
         {completedTasks.length > 0 && (
           <div className="p-5 rounded-2xl glass-panel opacity-75 hover:opacity-100 transition-opacity">
-            <h3 className="font-bold text-xs text-slate-400 uppercase tracking-widest border-b border-black/5 dark:border-white/5 pb-2 mb-3">
+            <h3 className="font-bold text-xs text-slate-400 uppercase tracking-widest border-b border-black/5 pb-2 mb-3">
               Completed Tasks ({completedTasks.length})
             </h3>
 
-            <div className="divide-y divide-black/5 dark:divide-white/5">
+            <div className="divide-y divide-black/5">
               {completedTasks.map((t) => (
                 <div key={t.id} className="flex items-center justify-between gap-3 py-2.5 group">
                   <div className="flex items-center gap-3">

@@ -116,7 +116,7 @@ export default function ClientsView({
               className={`px-3 py-1.5 rounded-xl text-xs font-semibold backdrop-blur-sm transition-all cursor-pointer ${
                 filterStatus === tab
                   ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/15"
-                  : "glass-item border border-white/20 dark:border-white/5 text-slate-500 hover:text-slate-800 dark:hover:text-slate-100"
+                  : "glass-item border border-white/20 text-slate-500 hover:text-slate-800"
               }`}
             >
               {tab} ({tab === "All" ? clients.length : clients.filter((c) => c.status === tab).length})
@@ -150,8 +150,8 @@ export default function ClientsView({
               exit={{ scale: 0.95, opacity: 0 }}
               className="w-full max-w-md glass-modal rounded-2xl shadow-xl overflow-hidden"
             >
-              <div className="p-5 border-b border-white/10 dark:border-white/5 flex items-center justify-between">
-                <h3 className="font-bold text-sm text-slate-800 dark:text-slate-200">
+              <div className="p-5 border-b border-white/10 flex items-center justify-between">
+                <h3 className="font-bold text-sm text-slate-800">
                   {isAdding ? "Register New Client" : `Edit Details: ${editingClient?.companyName}`}
                 </h3>
                 <button
@@ -159,7 +159,7 @@ export default function ClientsView({
                     setIsAdding(false);
                     setEditingClient(null);
                   }}
-                  className="p-1 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600"
+                  className="p-1 rounded-full hover:bg-slate-200 text-slate-400 hover:text-slate-600"
                 >
                   <X size={16} />
                 </button>
@@ -173,7 +173,7 @@ export default function ClientsView({
                     required
                     value={companyName}
                     onChange={(e) => setCompanyName(e.target.value)}
-                    className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none"
+                    className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 focus:outline-none"
                     placeholder="e.g. Acme Tech Solutions"
                   />
                 </div>
@@ -185,7 +185,7 @@ export default function ClientsView({
                     required
                     value={contactPerson}
                     onChange={(e) => setContactPerson(e.target.value)}
-                    className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none"
+                    className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 focus:outline-none"
                     placeholder="e.g. Rachel Green"
                   />
                 </div>
@@ -197,7 +197,7 @@ export default function ClientsView({
                       type="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none"
+                      className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 focus:outline-none"
                       placeholder="rachel@acme.com"
                     />
                   </div>
@@ -207,7 +207,7 @@ export default function ClientsView({
                       type="text"
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
-                      className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none"
+                      className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 focus:outline-none"
                       placeholder="+1 (555) 321-4567"
                     />
                   </div>
@@ -223,8 +223,8 @@ export default function ClientsView({
                         onClick={() => setStatus(s as any)}
                         className={`flex-1 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
                           status === s
-                            ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-405"
-                            : "border-slate-200 dark:border-slate-800 bg-transparent text-slate-500"
+                            ? "border-indigo-500 bg-indigo-50 text-indigo-600"
+                            : "border-slate-200 bg-transparent text-slate-500"
                         }`}
                       >
                         {s}
@@ -239,7 +239,7 @@ export default function ClientsView({
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
                     rows={3}
-                    className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 dark:text-slate-200 focus:outline-none resize-none"
+                    className="w-full py-2 px-3 glass-input rounded-xl text-slate-800 focus:outline-none resize-none"
                     placeholder="Hourly rates, past contracts discussion, preferred tools..."
                   />
                 </div>
@@ -251,7 +251,7 @@ export default function ClientsView({
                       setIsAdding(false);
                       setEditingClient(null);
                     }}
-                    className="flex-1 py-2 border border-slate-200 dark:border-slate-800 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800/40 rounded-xl text-xs font-bold transition-colors"
+                    className="flex-1 py-2 border border-slate-200 text-slate-500 hover:bg-slate-50 rounded-xl text-xs font-bold transition-colors"
                   >
                     Cancel
                   </button>
@@ -271,9 +271,9 @@ export default function ClientsView({
       {/* Empty State */}
       {filteredClients.length === 0 ? (
         <div className="flex flex-col items-center justify-center p-12 glass-panel rounded-2xl text-center">
-          <Users className="w-12 h-12 text-slate-300 dark:text-slate-600 mb-3" />
-          <h4 className="font-bold text-slate-800 dark:text-slate-200">No matching clients found</h4>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm">
+          <Users className="w-12 h-12 text-slate-300 mb-3" />
+          <h4 className="font-bold text-slate-800">No matching clients found</h4>
+          <p className="text-xs text-slate-500 mt-1 max-w-sm">
             {clients.length === 0
               ? "Your client ledger is currently empty. Get started by cataloging your first corporate or independent client partner."
               : "Refine your keyword queries or clean status filters to locate specific client entities."}
@@ -299,7 +299,7 @@ export default function ClientsView({
               <div>
                 <div className="flex items-start justify-between gap-2 mb-3">
                   <div>
-                    <h4 className="font-bold text-slate-800 dark:text-slate-100 text-base line-clamp-1">
+                    <h4 className="font-bold text-slate-800 text-base line-clamp-1">
                       {client.companyName}
                     </h4>
                     <span className="text-xs font-medium text-slate-400 mt-0.5 block">
@@ -308,16 +308,16 @@ export default function ClientsView({
                   </div>
                   <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${
                     client.status === "Active"
-                      ? "bg-emerald-500/10 text-emerald-650 dark:text-emerald-400"
+                      ? "bg-emerald-500/10 text-emerald-650"
                       : client.status === "Lead"
-                      ? "bg-violet-500/10 text-violet-650 dark:text-violet-300"
+                      ? "bg-violet-500/10 text-violet-650"
                       : "bg-slate-500/10 text-slate-400"
                   }`}>
                     {client.status}
                   </span>
                 </div>
 
-                <div className="space-y-1.5 text-xs text-slate-500 dark:text-slate-400 border-t border-black/5 dark:border-white/5 pt-2.5 mb-4">
+                <div className="space-y-1.5 text-xs text-slate-500 border-t border-black/5 pt-2.5 mb-4">
                   {client.email && (
                     <div className="flex items-center gap-1.5">
                       <Mail size={13} className="text-slate-400" />
@@ -333,17 +333,17 @@ export default function ClientsView({
                     </div>
                   )}
                   {client.notes && (
-                    <p className="text-[11px] text-slate-450 mt-2 bg-slate-500/5 dark:bg-black/20 p-2 rounded-lg italic line-clamp-2">
+                    <p className="text-[11px] text-slate-450 mt-2 bg-slate-500/5 p-2 rounded-lg italic line-clamp-2">
                       "{client.notes}"
                     </p>
                   )}
                 </div>
               </div>
 
-              <div className="flex justify-end gap-1.5 border-t border-black/5 dark:border-white/5 pt-3 opacity-90 group-hover:opacity-100 transition-opacity">
+              <div className="flex justify-end gap-1.5 border-t border-black/5 pt-3 opacity-90 group-hover:opacity-100 transition-opacity">
                 <button
                   onClick={() => handleStartEdit(client)}
-                  className="p-1 px-2.5 border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/40 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1"
+                  className="p-1 px-2.5 border border-slate-200 text-slate-500 hover:text-slate-700 hover:bg-slate-50 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1"
                 >
                   <Edit3 size={11} />
                   <span>Edit</span>
@@ -354,7 +354,7 @@ export default function ClientsView({
                       onDeleteClient(client.id);
                     }
                   }}
-                  className="p-1 px-2.5 border border-red-200 dark:border-red-950 text-red-500 hover:text-white hover:bg-red-500 dark:hover:bg-red-900/40 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1"
+                  className="p-1 px-2.5 border border-red-200 text-red-500 hover:text-white hover:bg-red-500 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1"
                 >
                   <Trash2 size={11} />
                   <span>Delete</span>
