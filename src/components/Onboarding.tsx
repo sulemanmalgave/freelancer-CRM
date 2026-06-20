@@ -56,8 +56,8 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
         className="w-full max-w-lg glass-modal rounded-3xl p-6 sm:p-8 shadow-2xl"
       >
         <div className="flex flex-col items-center text-center mb-8">
-          <div className="w-14 h-14 bg-indigo-500/10 rounded-2xl flex items-center justify-center text-indigo-650 mb-4 border border-indigo-500/20">
-            <Briefcase className="w-7 h-7" />
+          <div className="p-0.5 bg-transparent rounded-2xl flex items-center justify-center shrink-0 w-16 h-16 select-none mb-4">
+            <img src="/icon-192.png" alt="Freelancer CRM Logo" className="w-16 h-16 rounded-2xl object-contain shadow-md" referrerPolicy="no-referrer" />
           </div>
           <h1 className="text-2xl font-extrabold text-slate-900">Welcome to Freelancer CRM</h1>
           <p className="text-sm text-slate-500 mt-2 max-w-sm">
