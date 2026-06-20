@@ -483,7 +483,7 @@ export default function App() {
         <div className="p-6 border-b border-white/10 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="p-0.5 bg-transparent rounded-xl flex items-center justify-center shrink-0 w-8 h-8 select-none">
-              <img src={logoIcon} alt="Freelancer CRM Logo" className="w-8 h-8 rounded-xl object-contain shadow-sm shadow-indigo-500/10" referrerPolicy="no-referrer" />
+              <img src={logoIcon} alt="Freelancer CRM Logo" className="w-8 h-8 rounded-xl object-contain shadow-md shadow-indigo-600/10 ring-1 ring-slate-200/40 hover:scale-108 active:scale-95 transition-all duration-350 ease-out cursor-pointer" referrerPolicy="no-referrer" />
             </div>
             <div>
               <h1 className="font-bold text-sm tracking-tight text-slate-900 leading-none">
