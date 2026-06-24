@@ -33,6 +33,9 @@ import { FreelancerProfile, Client, Project, Task, Invoice, Lead, DocumentRecord
 import { db } from "./firebase";
 import { doc, setDoc, deleteDoc, getDoc, getDocs, collection, query, where } from "firebase/firestore";
 
+// Utilities
+import { generateUUID } from "./utils";
+
 // UI Views
 import Onboarding from "./components/Onboarding";
 import UpgradeModal from "./components/UpgradeModal";
@@ -103,16 +106,20 @@ export default function App() {
   }, []);
 
   const triggerPwaInstall = async () => {
-    const promptEvent = pwaPrompt || (window as any).deferredPrompt;
-    if (!promptEvent) return;
+    try {
+      const promptEvent = pwaPrompt || (window as any).deferredPrompt;
+      if (!promptEvent) return;
 
-    promptEvent.prompt();
-    const { outcome } = await promptEvent.userChoice;
-    console.log(`User response to installation prompt: ${outcome}`);
-
-    setPwaPrompt(null);
-    (window as any).deferredPrompt = null;
-    setShowPwaBanner(false);
+      promptEvent.prompt();
+      const { outcome } = await promptEvent.userChoice;
+      console.log(`User response to installation prompt: ${outcome}`);
+    } catch (err) {
+      console.warn("PWA prompt interaction failed or blocked:", err);
+    } finally {
+      setPwaPrompt(null);
+      (window as any).deferredPrompt = null;
+      setShowPwaBanner(false);
+    }
   };
 
   // 1. Initial State Bootstrap from Local Caching
@@ -265,7 +272,7 @@ export default function App() {
     if (!profile) return;
     const newClient: Client = {
       ...fields,
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       freelancerId: profile.id,
       createdAt: new Date().toISOString(),
     };
@@ -292,7 +299,7 @@ export default function App() {
     if (!profile) return;
     const newProject: Project = {
       ...fields,
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       freelancerId: profile.id,
       createdAt: new Date().toISOString(),
     };
@@ -319,7 +326,7 @@ export default function App() {
     if (!profile) return;
     const newTask: Task = {
       ...fields,
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       freelancerId: profile.id,
       createdAt: new Date().toISOString(),
     };
@@ -349,7 +356,7 @@ export default function App() {
     const nextSeq = String(invoices.length + 1).padStart(3, "0");
     const newInvoice: Invoice = {
       ...fields,
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       freelancerId: profile.id,
       invoiceNumber: `INV-${nextSeq}`,
       createdAt: new Date().toISOString(),
@@ -377,7 +384,7 @@ export default function App() {
     if (!profile) return;
     const newLead: Lead = {
       ...fields,
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       freelancerId: profile.id,
       createdAt: new Date().toISOString(),
     };
@@ -425,7 +432,7 @@ export default function App() {
     if (!profile) return;
     const newDoc: DocumentRecord = {
       ...fields,
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       freelancerId: profile.id,
       uploadDate: new Date().toISOString().split("T")[0],
       createdAt: new Date().toISOString(),
