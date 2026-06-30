@@ -175,7 +175,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
 
           <button
             type="submit"
-            className="w-full mt-6 py-3 px-4 bg-indigo-650 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/15 group cursor-pointer"
+            className="w-full mt-6 py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/15 group cursor-pointer"
           >
             <span>Launch CRM Workspace</span>
             <ArrowRight size={16} className="group-hover:translate-x-0.5 transition-transform" />

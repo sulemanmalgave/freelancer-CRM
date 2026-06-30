@@ -209,6 +209,67 @@ export default function App() {
     pullCloudData();
   }, [profile?.id]);
 
+  // Stripe session verification handler
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const stripeStatus = params.get("stripe_status");
+    const sessionId = params.get("session_id");
+
+    if (stripeStatus === "success" && sessionId) {
+      const verifyStripePayment = async () => {
+        try {
+          setCloudSyncStatus("syncing");
+          const res = await fetch(`/api/stripe/verify-session?session_id=${sessionId}`);
+          const data = await res.json();
+
+          if (data.success) {
+            // Retrieve current profile
+            const cachedProfile = localStorage.getItem("crm_profile");
+            const activeProfile = profile || (cachedProfile ? JSON.parse(cachedProfile) : null);
+
+            if (activeProfile) {
+              const renewsAt = new Date();
+              renewsAt.setDate(renewsAt.getDate() + 30);
+
+              const subData: Partial<FreelancerProfile> = {
+                plan: "Pro",
+                subscriptionStatus: "active",
+                subscriptionRegion: activeProfile.country === "IN" ? "IN" : "US",
+                subscriptionMethod: "Stripe Card (Real-time)",
+                subscriptionRenewsAt: renewsAt.toISOString(),
+              };
+
+              const updatedProfile = { ...activeProfile, ...subData };
+              setProfile(updatedProfile);
+              localStorage.setItem("crm_profile", JSON.stringify(updatedProfile));
+
+              // Update Firestore profile directly
+              await setDoc(doc(db, "freelancers", activeProfile.id), updatedProfile, { merge: true });
+              setCloudSyncStatus("synced");
+
+              // Instruct UpgradeModal to show success state and open it!
+              sessionStorage.setItem("stripe_payment_success", "true");
+              setUpgradeOpen(true);
+              setUpgradeReason("stripe_success_redirect");
+            }
+          }
+        } catch (err) {
+          console.error("Failed to verify Stripe payment:", err);
+        } finally {
+          // Clean URL parameters cleanly without refreshing the browser tab
+          const cleanUrl = window.location.pathname;
+          window.history.replaceState({}, document.title, cleanUrl);
+        }
+      };
+
+      verifyStripePayment();
+    } else if (stripeStatus === "cancel") {
+      const cleanUrl = window.location.pathname;
+      window.history.replaceState({}, document.title, cleanUrl);
+      alert("Stripe Checkout was cancelled. Your subscription remains unchanged.");
+    }
+  }, [profile?.id]);
+
   // Helper: Persist specific entity locally + Firestore push
   const saveEntity = async <T extends { id: string; freelancerId: string }>(
     collectionName: string,

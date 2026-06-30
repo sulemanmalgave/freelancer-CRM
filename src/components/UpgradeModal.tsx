@@ -45,6 +45,9 @@ export default function UpgradeModal({
   const [upiIdInput, setUpiIdInput] = useState("");
   const [upiError, setUpiError] = useState("");
 
+  const [stripeConfigured, setStripeConfigured] = useState(false);
+  const [stripePublishableKey, setStripePublishableKey] = useState("");
+
   // Stripe card details
   const [cardName, setCardName] = useState("");
   const [cardNumber, setCardNumber] = useState("");
@@ -65,8 +68,26 @@ export default function UpgradeModal({
   const formattedPrice = isIndia ? "₹99" : "$1.99";
 
   useEffect(() => {
+    // Fetch Stripe config on load
+    fetch("/api/stripe/config")
+      .then((r) => r.json())
+      .then((data) => {
+        setStripeConfigured(data.isConfigured);
+        if (data.publishableKey) {
+          setStripePublishableKey(data.publishableKey);
+        }
+      })
+      .catch((err) => console.error("Error fetching stripe configurations:", err));
+  }, []);
+
+  useEffect(() => {
     if (isOpen) {
-      setPurchaseStage("plans");
+      if (sessionStorage.getItem("stripe_payment_success") === "true") {
+        setPurchaseStage("success");
+        sessionStorage.removeItem("stripe_payment_success");
+      } else {
+        setPurchaseStage("plans");
+      }
       setSelectedUpiApp("");
       setUpiMode("upi_id");
       setUpiIdInput("");
@@ -143,10 +164,8 @@ export default function UpgradeModal({
 
   // Run transaction simulation
   const triggerTransaction = async (simulateFailure: boolean = false) => {
-    // Validate first
-    if (isIndia) {
-      if (!validateUpiInput()) return;
-    } else {
+    // Validate first if we are doing mock payment (real Stripe checkout validates on Stripe host)
+    if (!stripeConfigured) {
       if (!validateCardInput()) return;
     }
 
@@ -158,31 +177,46 @@ export default function UpgradeModal({
     };
 
     try {
+      if (stripeConfigured) {
+        pushLog("Stripe Payment Gateway is ACTIVE.");
+        pushLog("Initiating checkout handshake with our Stripe full-stack backend...");
+        await new Promise((r) => setTimeout(r, 600));
+
+        const res = await fetch("/api/stripe/create-checkout-session", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            freelancerId: profile.id,
+            planName: "Pro",
+            isIndia: isIndia,
+          }),
+        });
+
+        const data = await res.json();
+        if (res.ok && data.url) {
+          pushLog("Stripe Checkout Session initialized successfully!");
+          pushLog("Redirecting you to Stripe's secure hosted payment gateway...");
+          await new Promise((r) => setTimeout(r, 1000));
+          window.location.href = data.url;
+          return;
+        } else {
+          throw new Error(data.error || "Failed to create Stripe Checkout Session.");
+        }
+      }
+
+      // Fallback Simulation Mode
+      pushLog("Stripe credentials not detected. Operating in High-Fidelity Sandbox Simulation.");
       pushLog("Contacting payment gateway authorization endpoints...");
       await new Promise((r) => setTimeout(r, 600));
 
-      if (isIndia) {
-        pushLog(`Detected Client Route: UPI Intent via [${selectedUpiApp.toUpperCase()}]`);
-        pushLog(`Creating transaction payload: ₹99, target account: freelancer_crm@razorpay`);
-        await new Promise((r) => setTimeout(r, 600));
-
-        if (upiMode === "upi_id") {
-          pushLog(`Sending secure pull notification request to: ${upiIdInput}`);
-          await new Promise((r) => setTimeout(r, 700));
-          pushLog("Awaiting confirmation from user's smartphone device...");
-        } else {
-          pushLog("Generating secure scan-to-order dynamic BHIM QR code...");
-          await new Promise((r) => setTimeout(r, 700));
-          pushLog("Awaiting scan and PIN authentication from banking network...");
-        }
-      } else {
-        pushLog("Detected Client Route: Stripe direct API checkout handshake");
-        pushLog(`Tokenizing debit/credit payload for: ${cardName}`);
-        await new Promise((r) => setTimeout(r, 600));
-        pushLog(`Sending HTTPS payload metadata to Stripe servers (USD $1.99)`);
-        await new Promise((r) => setTimeout(r, 700));
-        pushLog("Contacting issuing financial merchant network for authorization...");
-      }
+      pushLog("Detected Client Route: Stripe direct API card payment");
+      pushLog(`Tokenizing debit/credit payload for: ${cardName}`);
+      await new Promise((r) => setTimeout(r, 600));
+      pushLog(`Sending HTTPS payload metadata to Stripe servers (${formattedPrice})`);
+      await new Promise((r) => setTimeout(r, 700));
+      pushLog("Contacting issuing financial merchant network for authorization...");
 
       await new Promise((r) => setTimeout(r, 1000));
 
@@ -207,7 +241,7 @@ export default function UpgradeModal({
         plan: "Pro",
         subscriptionStatus: "active",
         subscriptionRegion: isIndia ? "IN" : "US",
-        subscriptionMethod: isIndia ? `UPI (${selectedUpiApp.toUpperCase()})` : "Stripe Card",
+        subscriptionMethod: "Stripe Card",
         subscriptionRenewsAt: renewsAt.toISOString(),
       };
 
@@ -223,7 +257,8 @@ export default function UpgradeModal({
       setPurchaseStage("success");
     } catch (e: any) {
       pushLog(`Fatal error processing transaction: ${e?.message || e}`);
-      await new Promise((r) => setTimeout(r, 1000));
+      await new Promise((r) => setTimeout(r, 1500));
+      setCardError(e?.message || "Transaction process failed.");
       setPurchaseStage("failed");
     }
   };
@@ -501,7 +536,7 @@ export default function UpgradeModal({
                       <span className="text-slate-500 text-xs">/month</span>
                     </div>
                     <span className="text-[10px] text-slate-400 mt-2 block">
-                      Region Handshake: <strong className="text-indigo-650">{isIndia ? "India (UPI Mode Only)" : "International (Stripe Direct Only)"}</strong>
+                      Region Handshake: <strong className="text-indigo-650">Stripe Card Checkout ({isIndia ? "INR ₹" : "USD $"})</strong>
                     </span>
                   </div>
 
@@ -547,157 +582,49 @@ export default function UpgradeModal({
                     </div>
                   )}
 
-                  {/* DYNAMIC PAYMENT UI GATES */}
-                  {isIndia ? (
-                    /* INDIA PAYMENTS: UPI ONLY */
-                    <div className="border-t border-slate-100 pt-4 space-y-3.5">
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider flex items-center gap-1">
-                          <Smartphone size={14} className="text-indigo-500" />
-                          <span>Direct Unified Payments Interface (UPI)</span>
-                        </h4>
-                        <span className="text-[9px] bg-indigo-50 text-indigo-605 px-2 py-0.5 rounded-full font-bold">₹ INR ONLY</span>
-                      </div>
+                  {/* DYNAMIC SECURE PAYMENT UI GATES */}
+                  <div className="border-t border-slate-100 pt-4 space-y-3.5">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider flex items-center gap-1">
+                        <CreditCard size={14} className="text-indigo-500" />
+                        <span>Stripe Checkout Direct Secure Card</span>
+                      </h4>
+                      <span className="text-[9px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold">
+                        {isIndia ? "₹ INR SUPPORTED" : "USD $ SUPPORTED"}
+                      </span>
+                    </div>
 
-                      {/* Mode Tab selectors */}
-                      <div className="flex bg-slate-100 p-1 rounded-lg">
-                        <button
-                          type="button"
-                          onClick={() => setUpiMode("upi_id")}
-                          className={`flex-1 py-1 text-center text-[10px] font-bold rounded-md transition-all ${
-                            upiMode === "upi_id" ? "bg-white text-slate-800 shadow" : "text-slate-450 hover:text-slate-700"
-                          }`}
-                        >
-                          UPI App ID Transfer
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setUpiMode("qr")}
-                          className={`flex-1 py-1 text-center text-[10px] font-bold rounded-md transition-all ${
-                            upiMode === "qr" ? "bg-white text-slate-800 shadow" : "text-slate-450 hover:text-slate-700"
-                          }`}
-                        >
-                          Generate BHIM Dynamic QR
-                        </button>
-                      </div>
-
-                      {upiMode === "upi_id" ? (
-                        <div className="space-y-3">
-                          {/* App shortcuts */}
-                          <span className="text-slate-400 text-[10px] block font-bold">Select Preferred App Gateway:</span>
-                          <div className="grid grid-cols-5 gap-1.5">
-                            {[
-                              { id: "gpay", label: "Google Pay", color: "border-blue-200 hover:bg-blue-50 hover:border-blue-400 hover:text-blue-600" },
-                              { id: "phonepe", label: "PhonePe", color: "border-purple-200 hover:bg-purple-50 hover:border-purple-400 hover:text-purple-600" },
-                              { id: "paytm", label: "Paytm", color: "border-sky-200 hover:bg-sky-50 hover:border-sky-400 hover:text-sky-600" },
-                              { id: "bhim", label: "BHIM", color: "border-orange-200 hover:bg-orange-50 hover:border-orange-400 hover:text-orange-600" },
-                              { id: "razorpay", label: "Any App", color: "border-slate-200 hover:bg-slate-50 hover:border-slate-400 hover:text-slate-600" },
-                            ].map((app) => (
-                              <button
-                                key={app.id}
-                                type="button"
-                                onClick={() => handleUpiAppSelect(app.id as any)}
-                                className={`py-2 px-1 border text-[10px] font-bold rounded-xl transition-all text-center flex flex-col items-center justify-center gap-1 cursor-pointer ${
-                                  selectedUpiApp === app.id
-                                    ? "border-indigo-600 bg-indigo-50/50 text-indigo-600 shadow-sm"
-                                    : `border-slate-200 text-slate-500 bg-white ${app.color}`
-                                }`}
-                              >
-                                <Smartphone size={14} className={selectedUpiApp === app.id ? "text-indigo-60s" : "text-slate-400"} />
-                                <span className="text-[8px] leading-tight break-all">{app.label}</span>
-                              </button>
-                            ))}
+                    {stripeConfigured ? (
+                      <div className="space-y-4">
+                        <div className="p-4 bg-indigo-50/50 border border-indigo-100 rounded-2xl space-y-2">
+                          <div className="flex items-center gap-2 text-indigo-700 font-extrabold text-xs uppercase tracking-wider">
+                            <Sparkles size={14} className="text-indigo-500 animate-pulse" />
+                            <span>Stripe Payment Server Online</span>
                           </div>
-
-                          {/* UPI Address field */}
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-450 mb-1">Enter UPI VPA Address *</label>
-                            <input
-                              type="text"
-                              value={upiIdInput}
-                              onChange={(e) => {
-                                setUpiIdInput(e.target.value);
-                                setUpiError("");
-                              }}
-                              placeholder="e.g. business@oksbi"
-                              className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 font-mono"
-                            />
-                            {upiError ? (
-                              <span className="text-[10px] text-rose-500 font-bold block mt-1">{upiError}</span>
-                            ) : (
-                              <span className="text-[9px] text-slate-400 block mt-1 leading-normal">
-                                Supported handles: @oksbi, @ybl, @paytm, @bhim, @apl, and Razorpay deep integration handles.
-                              </span>
-                            )}
+                          <p className="text-slate-600 text-xs leading-relaxed">
+                            Your workspace is fully connected to Stripe. Clicking the button below will securely direct you to Stripe's hosted checkout page to complete your Pro monthly subscription.
+                          </p>
+                          <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-medium">
+                            <Lock size={10} />
+                            <span>HTTPS 256-bit AES encrypted transaction</span>
                           </div>
                         </div>
-                      ) : (
-                        <div className="flex flex-col items-center p-3 bg-slate-50 border border-slate-100 rounded-2xl relative overflow-hidden">
-                          {/* Animated Scanning Box */}
-                          <div className="relative border-4 border-slate-250 p-2.5 bg-white rounded-xl shadow-inner">
-                            {/* Dummy SVG QR */}
-                            <svg className="w-28 h-28 text-slate-800" viewBox="0 0 100 100">
-                              <rect width="100" height="100" fill="white" />
-                              {/* Outer Anchor Squares */}
-                              <path d="M5 5h20v20H5V5zm6 6h8v8h-8v-8z" fill="currentColor" />
-                              <path d="M75 5h20v20H75V5zm6 6h8v8h-8v-8z" fill="currentColor" />
-                              <path d="M5 75h20v20H5V75zm6 6h8v8h-8v-8z" fill="currentColor" />
-                              {/* Inside random blocks */}
-                              <rect x="35" y="5" width="8" height="8" fill="currentColor" />
-                              <rect x="45" y="15" width="12" height="6" fill="currentColor" />
-                              <rect x="60" y="5" width="8" height="15" fill="currentColor" />
-                              <rect x="35" y="30" width="15" height="10" fill="currentColor" />
-                              <rect x="5" y="35" width="12" height="12" fill="currentColor" fillOpacity="0.4" />
-                              <rect x="55" y="35" width="40" height="35" fill="currentColor" />
-                              <rect x="55" y="75" width="12" height="20" fill="currentColor" />
-                              <rect x="35" y="55" width="10" height="40" fill="currentColor" />
-                              <rect x="75" y="75" width="20" height="20" fill="currentColor" />
-                              {/* Tiny interior label */}
-                              <rect x="40" y="40" width="20" height="20" rx="2" fill="white" />
-                              <text x="43" y="53" fontSize="8" fontWeight="bold" fill="#4f46e5">UPI</text>
-                            </svg>
-                            {/* Scan-Line animation overlay */}
-                            <div className="absolute left-0 right-0 h-0.5 bg-indigo-500 top-1/2 animate-bounce"></div>
-                          </div>
-                          <span className="text-[10px] text-slate-500 mt-2 font-semibold">
-                            Scan to pay ₹99/month with GPay, PhonePe, Paytm or BHIM
-                          </span>
-                        </div>
-                      )}
 
-                      {/* Complete Buttons */}
-                      <div className="grid grid-cols-2 gap-2 pt-2">
-                        <button
-                          type="button"
-                          onClick={() => triggerTransaction(true)}
-                          className="py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer"
-                        >
-                          <AlertTriangle size={13} />
-                          <span>Simulate Failure</span>
-                        </button>
                         <button
                           type="button"
                           onClick={() => triggerTransaction(false)}
-                          className="py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black shadow-lg shadow-indigo-600/15 flex items-center justify-center gap-1.5 cursor-pointer"
+                          className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-2 cursor-pointer transition-all hover:scale-[1.01]"
                         >
-                          <Lock size={12} />
-                          <span>Pay ₹99 Securely</span>
+                          <Lock size={14} />
+                          <span>Proceed to Stripe Checkout</span>
                         </button>
                       </div>
-                    </div>
-                  ) : (
-                    /* INTERNATIONAL PAYMENTS: STRIPE DIRECT CARD ONLY */
-                    <div className="border-t border-slate-100 pt-4 space-y-3.5">
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider flex items-center gap-1">
-                          <CreditCard size={14} className="text-indigo-500" />
-                          <span>Stripe Checkout Direct Secure Card</span>
-                        </h4>
-                        <span className="text-[9px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold">USD $ ONLY</span>
-                      </div>
-
-                      {/* Mock Card Form */}
+                    ) : (
                       <div className="space-y-3">
+                        <div className="p-3 bg-amber-500/10 border border-amber-500/15 rounded-xl text-amber-800 text-[10px] leading-normal font-semibold">
+                          ⚠️ <strong>Developer Notice:</strong> To enable real Stripe payments, define <strong>STRIPE_SECRET_KEY</strong> and <strong>VITE_STRIPE_PUBLISHABLE_KEY</strong> in your .env.example/environment settings.
+                        </div>
+
                         <div className="grid grid-cols-2 gap-2.5">
                           {/* Quick checkout wallets */}
                           <button
@@ -792,29 +719,29 @@ export default function UpgradeModal({
                         {cardError && (
                           <span className="text-[10px] text-rose-500 font-bold block mt-1">{cardError}</span>
                         )}
-                      </div>
 
-                      {/* Complete Buttons */}
-                      <div className="grid grid-cols-2 gap-2 pt-2">
-                        <button
-                          type="button"
-                          onClick={() => triggerTransaction(true)}
-                          className="py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer"
-                        >
-                          <AlertTriangle size={13} />
-                          <span>Simulate Failure</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => triggerTransaction(false)}
-                          className="py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black shadow-lg shadow-indigo-600/15 flex items-center justify-center gap-1.5 cursor-pointer"
-                        >
-                          <Lock size={12} />
-                          <span>Pay $1.99 Securely</span>
-                        </button>
+                        {/* Complete Buttons */}
+                        <div className="grid grid-cols-2 gap-2 pt-2">
+                          <button
+                            type="button"
+                            onClick={() => triggerTransaction(true)}
+                            className="py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer"
+                          >
+                            <AlertTriangle size={13} />
+                            <span>Simulate Failure</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => triggerTransaction(false)}
+                            className="py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black shadow-lg shadow-indigo-600/15 flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <Lock size={12} />
+                            <span>Pay {formattedPrice} Securely</span>
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -899,17 +826,51 @@ export default function UpgradeModal({
                 <AlertCircle className="w-7 h-7" />
               </div>
               <div className="space-y-1">
-                <h3 className="text-lg font-black text-rose-600 uppercase">Transaction Declined</h3>
+                <h3 className="text-lg font-black text-rose-600 uppercase">
+                  {cardError && (cardError.includes("account or business name") || cardError.includes("business name"))
+                    ? "Stripe Setup Required"
+                    : "Transaction Declined"}
+                </h3>
                 <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                  The central issuing bank or credit gateway refused authorization for this monthly subscription.
+                  {cardError && (cardError.includes("account or business name") || cardError.includes("business name"))
+                    ? "Your Stripe account is missing a public business or company name, which is required by Stripe Checkout."
+                    : "The central issuing bank or credit gateway refused authorization for this monthly subscription."}
                 </p>
               </div>
 
-              <div className="p-3 bg-stone-50 border border-stone-150 rounded-xl text-[10px] text-left w-full space-y-1.5 font-mono text-slate-500 leading-normal">
-                <div>[SERVERCALLBACK_LOG]: DECLINED_MERCHANT</div>
-                <div>[REASON_STRING]: "Simulated gateway decline response (Code 405)"</div>
-                <div>[REGION_CODE]: {isIndia ? "IN-RBI-VPA" : "ST-INT-SEC"}</div>
-              </div>
+              {cardError && (cardError.includes("account or business name") || cardError.includes("business name")) ? (
+                <div className="w-full text-left space-y-3">
+                  <div className="p-4 bg-amber-500/10 border border-amber-500/15 rounded-2xl space-y-2">
+                    <h4 className="text-xs font-bold text-amber-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <span>⚠️ Missing Stripe Profile Name</span>
+                    </h4>
+                    <p className="text-xs text-amber-900 leading-relaxed">
+                      Stripe requires a public merchant name to display to customers on the checkout page. To fix this:
+                    </p>
+                    <ol className="text-xs text-amber-900 list-decimal list-inside pl-1 space-y-1">
+                      <li>Log in to your Stripe Dashboard.</li>
+                      <li>Go to <strong className="font-extrabold">Settings &gt; Public details</strong> or directly to <a href="https://dashboard.stripe.com/account" target="_blank" rel="noopener noreferrer" className="underline font-bold text-indigo-600 hover:text-indigo-800">dashboard.stripe.com/account</a>.</li>
+                      <li>Set an <strong>Account name</strong> or <strong>Public business name</strong>.</li>
+                      <li>Save the changes and try checkout again!</li>
+                    </ol>
+                  </div>
+
+                  <a
+                    href="https://dashboard.stripe.com/account"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold text-center transition-all shadow-md cursor-pointer"
+                  >
+                    Open Stripe Account Settings ↗
+                  </a>
+                </div>
+              ) : (
+                <div className="p-3 bg-stone-50 border border-stone-150 rounded-xl text-[10px] text-left w-full space-y-1.5 font-mono text-slate-500 leading-normal">
+                  <div>[SERVERCALLBACK_LOG]: DECLINED_MERCHANT</div>
+                  <div>[REASON_STRING]: "{cardError || "Simulated gateway decline response (Code 405)"}"</div>
+                  <div>[REGION_CODE]: {isIndia ? "IN-RBI-VPA" : "ST-INT-SEC"}</div>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-2 w-full pt-2">
                 <button
