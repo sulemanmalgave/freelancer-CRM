@@ -25,6 +25,7 @@ export default function InvoicesView({
   onDeleteInvoice,
   onTriggerUpgrade,
 }: InvoicesViewProps) {
+  const isFree = profile.plan === "Free" && !profile.premium;
   const [isAdding, setIsAdding] = useState(false);
   const [activeTab, setActiveTab] = useState<"All" | Invoice["status"]>("All");
   const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
@@ -63,7 +64,7 @@ export default function InvoicesView({
       return;
     }
     // Limit check for free tier
-    if (profile.plan === "Free" && invoices.length >= 5) {
+    if (isFree && invoices.length >= 5) {
       onTriggerUpgrade("invoice_limit");
       return;
     }
@@ -148,7 +149,7 @@ export default function InvoicesView({
         </div>
 
         <div className="flex items-center gap-2">
-          {profile.plan === "Free" && (
+          {isFree && (
             <span className="text-[11px] text-slate-400 font-medium">
               Invoices: <strong>{invoices.length}/5</strong>
             </span>

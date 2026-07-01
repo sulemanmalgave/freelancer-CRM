@@ -23,7 +23,7 @@ export default function DocumentsView({
   const [docCategory, setDocCategory] = useState<DocumentRecord["category"]>("Contract");
   const [isUploading, setIsUploading] = useState(false);
 
-  const isPro = profile.plan === "Pro";
+  const isPro = profile.premium === true || profile.plan === "Pro" || profile.plan === "Monthly" || profile.plan === "3 Months";
 
   // Handle document file reader to base64
   const processFile = (file: File) => {

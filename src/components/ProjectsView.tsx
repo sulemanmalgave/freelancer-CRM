@@ -25,6 +25,7 @@ export default function ProjectsView({
   onDeleteProject,
   onTriggerUpgrade,
 }: ProjectsViewProps) {
+  const isFree = profile.plan === "Free" && !profile.premium;
   const [isAdding, setIsAdding] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [showClientWarning, setShowClientWarning] = useState(false);
@@ -110,7 +111,7 @@ export default function ProjectsView({
       setShowClientWarning(true);
       return;
     }
-    if (profile.plan === "Free" && projects.length >= 10) {
+    if (isFree && projects.length >= 10) {
       onTriggerUpgrade("project_limit");
       return;
     }
@@ -225,7 +226,7 @@ export default function ProjectsView({
         </div>
 
         <div className="flex items-center gap-2">
-          {profile.plan === "Free" && (
+          {isFree && (
             <span className="text-[11px] text-slate-400 font-medium">
               Projects: <strong>{projects.length}/10</strong>
             </span>

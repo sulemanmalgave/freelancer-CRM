@@ -11,6 +11,7 @@ interface RevenueViewProps {
 }
 
 export default function RevenueView({ invoices, profile, onTriggerUpgrade }: RevenueViewProps) {
+  const isFree = profile.plan === "Free" && !profile.premium;
   // Extract Paid vs Pending
   const paidInvoicesList = invoices.filter((i) => i.status === "Paid");
   const pendingInvoicesList = invoices.filter((i) => i.status === "Sent" || i.status === "Draft" || i.status === "Overdue");
@@ -69,7 +70,7 @@ export default function RevenueView({ invoices, profile, onTriggerUpgrade }: Rev
   return (
     <div className="space-y-6">
       {/* SaaS Pricing Restriction Banner for Free User */}
-      {profile.plan === "Free" && (
+      {isFree && (
         <div className="p-4 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 text-white flex flex-col sm:flex-row items-center justify-between gap-4 shadow-lg shadow-indigo-600/10">
           <div className="flex items-center gap-2.5 text-center sm:text-left">
             <Sparkles className="w-5 h-5 text-amber-300 shrink-0" />
@@ -133,7 +134,7 @@ export default function RevenueView({ invoices, profile, onTriggerUpgrade }: Rev
 
       {/* SVG Interactive Dashboard Chart (Gated visual states) */}
       <div className={`p-5 rounded-2xl glass-panel relative overflow-hidden ${
-        profile.plan === "Free" ? "opacity-75" : ""
+        isFree ? "opacity-75" : ""
       }`}>
         <div className="flex items-center justify-between mb-6">
           <div>
@@ -240,7 +241,7 @@ export default function RevenueView({ invoices, profile, onTriggerUpgrade }: Rev
         </div>
 
         {/* Free Plan Overlays */}
-        {profile.plan === "Free" && (
+        {isFree && (
           <div className="absolute inset-0 bg-slate-100/10 backdrop-blur-[1px] flex flex-col justify-center items-center">
             {/* Simple card to block */}
           </div>

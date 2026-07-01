@@ -593,15 +593,15 @@ export default function App() {
 
           <span
             onClick={() => {
-              if (profile.plan === "Free") triggerUpgrade("upgrade_badge_click");
+              if (profile.plan === "Free" && !profile.premium) triggerUpgrade("upgrade_badge_click");
             }}
             className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full cursor-pointer transition-all ${
-              profile.plan === "Pro"
+              (profile.premium === true || profile.plan !== "Free")
                 ? "bg-emerald-100 text-emerald-800"
                 : "bg-indigo-100 text-indigo-805 hover:bg-indigo-600 hover:text-white"
             }`}
           >
-            {profile.plan} Plan
+            {profile.plan === "Free" && !profile.premium ? "Free" : "Pro"} Plan
           </span>
         </div>
 
@@ -651,7 +651,7 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-2">
-          {profile.plan === "Free" && (
+          {profile.plan === "Free" && !profile.premium && (
             <button
               onClick={() => triggerUpgrade("mobile_header")}
               className="text-[9px] font-black uppercase text-indigo-600 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full"

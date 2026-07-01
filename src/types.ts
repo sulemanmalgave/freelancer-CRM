@@ -4,13 +4,18 @@ export interface FreelancerProfile {
   businessName: string;
   currency: string;
   country: string;
-  plan: "Free" | "Pro";
+  plan: "Free" | "Pro" | "Monthly" | "3 Months" | string;
   onboardingCompleted: boolean;
   createdAt: string;
   subscriptionStatus?: "active" | "cancelled" | "inactive";
   subscriptionRegion?: "IN" | "US" | "Other" | string;
-  subscriptionMethod?: "UPI" | "Stripe" | string;
+  subscriptionMethod?: "UPI" | "Stripe" | "Razorpay" | "PayPal" | string;
   subscriptionRenewsAt?: string;
+  premium?: boolean;
+  paymentGateway?: "Razorpay" | "PayPal" | string;
+  purchaseDate?: string;
+  expiryDate?: string;
+  transactionId?: string;
 }
 
 export interface Client {

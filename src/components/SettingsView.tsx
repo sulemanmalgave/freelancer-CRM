@@ -132,7 +132,7 @@ export default function SettingsView({
         <div className="p-5 glass-panel rounded-2xl text-xs">
           <h3 className="font-bold text-xs uppercase tracking-widest text-slate-450 mb-3 block">Billing Entitlements</h3>
 
-          {profile.plan === "Pro" ? (
+          {profile.premium === true || profile.plan !== "Free" ? (
             <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl space-y-2 mt-2">
               <div className="flex items-center gap-1.5 text-emerald-600 font-bold">
                 <ShieldCheck className="w-4 h-4" />
@@ -140,7 +140,7 @@ export default function SettingsView({
               </div>
               <div className="text-[10px] text-slate-500 space-y-1">
                 <div>Method: <strong className="text-slate-700">{profile.subscriptionMethod || "Direct Gateway"}</strong></div>
-                <div>Region: <strong className="text-slate-700">{profile.subscriptionRegion === "IN" ? "India (₹99/mo)" : "International ($1.99/mo)"}</strong></div>
+                <div>Region: <strong className="text-slate-700">{profile.subscriptionRegion === "IN" ? "India (₹99/mo)" : "International ($2.99/mo)"}</strong></div>
               </div>
               <button
                 onClick={() => onTriggerUpgrade("settings_upgrade")}

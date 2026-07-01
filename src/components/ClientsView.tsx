@@ -22,6 +22,7 @@ export default function ClientsView({
   onDeleteClient,
   onTriggerUpgrade,
 }: ClientsViewProps) {
+  const isFree = profile.plan === "Free" && !profile.premium;
   const [isAdding, setIsAdding] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
 
@@ -55,7 +56,7 @@ export default function ClientsView({
   };
 
   const handleOpenAdd = () => {
-    if (profile.plan === "Free" && clients.length >= 20) {
+    if (isFree && clients.length >= 20) {
       onTriggerUpgrade("client_limit");
       return;
     }
@@ -125,7 +126,7 @@ export default function ClientsView({
         </div>
 
         <div className="flex items-center gap-2">
-          {profile.plan === "Free" && (
+          {isFree && (
             <span className="text-[11px] text-slate-400 font-medium">
               Clients: <strong>{clients.length}/20</strong>
             </span>

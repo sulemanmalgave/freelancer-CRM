@@ -167,7 +167,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
                   Pro Plan <span className="text-[9px] bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-md font-semibold">Popular</span>
                 </div>
                 <div className="text-[11px] text-slate-400 mt-1">
-                  {country === "IN" ? "₹99" : "$1.99"}/mo. Unlimited storage, documents, and invoicing.
+                  {country === "IN" ? "₹99" : "$2.99"}/mo. Unlimited storage, documents, and invoicing.
                 </div>
               </div>
             </div>
