@@ -233,8 +233,19 @@ app.get("/api/payment/config", async (req, res) => {
     }
   }
 
-  const systemRazorpayKeyId = process.env.RAZORPAY_KEY_ID || process.env.VITE_RAZORPAY_KEY_ID;
-  const systemRazorpayKeySecret = process.env.RAZORPAY_KEY_SECRET || process.env.VITE_RAZORPAY_KEY_SECRET;
+  const systemRazorpayKeyId = 
+    process.env.RAZORPAY_KEY_ID || 
+    process.env.VITE_RAZORPAY_KEY_ID || 
+    process.env.RAZORPAY_LIVE_KEY_ID || 
+    "";
+  const systemRazorpayKeySecret = 
+    process.env.RAZORPAY_KEY_SECRET || 
+    process.env.VITE_RAZORPAY_KEY_SECRET || 
+    process.env.RAZORPAY_LIVE_KEY_SECRET || 
+    process.env.RAZORPAY_LIVE_SECRET || 
+    process.env.RAZORPAY_SECRET || 
+    process.env.RAZORPAY_SECRET_KEY || 
+    "";
 
   const finalRazorpayKeyId = customRazorpayKeyId || systemRazorpayKeyId || "";
   const hasRazorpayConfigured = !!customRazorpayKeyId || (!!systemRazorpayKeyId && !!systemRazorpayKeySecret);
@@ -261,8 +272,19 @@ app.post("/api/razorpay/create-order", async (req, res) => {
     // Amount should be in paise for Indian currency
     const amountInPaise = Math.round(amount * 100);
 
-    let keyId = process.env.RAZORPAY_KEY_ID || process.env.VITE_RAZORPAY_KEY_ID;
-    let keySecret = process.env.RAZORPAY_KEY_SECRET || process.env.VITE_RAZORPAY_KEY_SECRET;
+    let keyId = 
+      process.env.RAZORPAY_KEY_ID || 
+      process.env.VITE_RAZORPAY_KEY_ID || 
+      process.env.RAZORPAY_LIVE_KEY_ID || 
+      "";
+    let keySecret = 
+      process.env.RAZORPAY_KEY_SECRET || 
+      process.env.VITE_RAZORPAY_KEY_SECRET || 
+      process.env.RAZORPAY_LIVE_KEY_SECRET || 
+      process.env.RAZORPAY_LIVE_SECRET || 
+      process.env.RAZORPAY_SECRET || 
+      process.env.RAZORPAY_SECRET_KEY || 
+      "";
 
     const profile = await getFreelancerProfile(freelancerId);
     if (profile && profile.razorpayKeyId && profile.razorpayKeySecret) {
@@ -326,8 +348,19 @@ app.post("/api/razorpay/verify-payment", async (req, res) => {
       return res.status(400).json({ error: "Missing required fields for payment verification" });
     }
 
-    let keyId = process.env.RAZORPAY_KEY_ID || process.env.VITE_RAZORPAY_KEY_ID;
-    let keySecret = process.env.RAZORPAY_KEY_SECRET || process.env.VITE_RAZORPAY_KEY_SECRET;
+    let keyId = 
+      process.env.RAZORPAY_KEY_ID || 
+      process.env.VITE_RAZORPAY_KEY_ID || 
+      process.env.RAZORPAY_LIVE_KEY_ID || 
+      "";
+    let keySecret = 
+      process.env.RAZORPAY_KEY_SECRET || 
+      process.env.VITE_RAZORPAY_KEY_SECRET || 
+      process.env.RAZORPAY_LIVE_KEY_SECRET || 
+      process.env.RAZORPAY_LIVE_SECRET || 
+      process.env.RAZORPAY_SECRET || 
+      process.env.RAZORPAY_SECRET_KEY || 
+      "";
 
     const profile = await getFreelancerProfile(freelancerId);
     if (profile && profile.razorpayKeyId && profile.razorpayKeySecret) {
@@ -379,8 +412,8 @@ app.post("/api/paypal/create-order", async (req, res) => {
       return res.status(400).json({ error: "Missing required parameters: freelancerId, planName, amount" });
     }
 
-    const clientId = process.env.VITE_PAYPAL_CLIENT_ID;
-    const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
+    const clientId = process.env.PAYPAL_CLIENT_ID || process.env.VITE_PAYPAL_CLIENT_ID;
+    const clientSecret = process.env.PAYPAL_CLIENT_SECRET || process.env.VITE_PAYPAL_CLIENT_SECRET;
     const apiUrl = process.env.PAYPAL_API_URL || "https://api-m.sandbox.paypal.com";
 
     if (clientId && clientSecret) {
@@ -463,8 +496,8 @@ app.post("/api/paypal/capture-order", async (req, res) => {
       return res.status(400).json({ error: "Missing required fields for capture" });
     }
 
-    const clientId = process.env.VITE_PAYPAL_CLIENT_ID;
-    const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
+    const clientId = process.env.PAYPAL_CLIENT_ID || process.env.VITE_PAYPAL_CLIENT_ID;
+    const clientSecret = process.env.PAYPAL_CLIENT_SECRET || process.env.VITE_PAYPAL_CLIENT_SECRET;
     const apiUrl = process.env.PAYPAL_API_URL || "https://api-m.sandbox.paypal.com";
 
     if (clientId && clientSecret) {
