@@ -362,51 +362,9 @@ export default function UpgradeModal({
         const rzp = new (window as any).Razorpay(options);
         rzp.open();
       } else {
-        // High-Fidelity simulation fallback if local SDK loading fails or gets blocked
-        setLogs((prev) => [
-          ...prev,
-          "[Razorpay] SDK script blocked or unconfigured. Triggering backend authorization simulation..."
-        ]);
-        await new Promise((r) => setTimeout(r, 1200));
-
-        const verifyRes = await fetch("/api/razorpay/verify-payment", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            freelancerId: profile.id,
-            planName: selectedPlan,
-            orderId: orderData.orderId,
-            paymentId: `pay_rzp_sim_${Math.random().toString(36).substring(2, 10)}`,
-          }),
-        });
-
-        const verifyResult = await verifyRes.json();
-        if (verifyResult.success) {
-          const durationInDays = selectedPlan === "Monthly" ? 30 : 90;
-          const expiryDate = new Date();
-          expiryDate.setDate(expiryDate.getDate() + durationInDays);
-
-          const subData = {
-            premium: true,
-            plan: selectedPlan, // "Monthly" or "3 Months"
-            paymentGateway: "Razorpay",
-            purchaseDate: new Date().toISOString(),
-            expiryDate: expiryDate.toISOString(),
-            transactionId: verifyResult.transactionId,
-            subscriptionStatus: "active" as const,
-            subscriptionRegion: "IN",
-            subscriptionMethod: "Razorpay (Simulated)",
-            subscriptionRenewsAt: expiryDate.toISOString(),
-          };
-
-          const pDoc = doc(db, "freelancers", profile.id);
-          await setDoc(pDoc, { ...profile, ...subData }, { merge: true });
-
-          onUpgradeSuccess("Pro" as any, subData);
-          setPurchaseStage("success");
-        } else {
-          throw new Error("Simulated payment verify endpoint error");
-        }
+        console.error("Razorpay SDK was not loaded. Cannot proceed with payment.");
+        setPaymentError("Razorpay checkout could not be loaded because the SDK script is blocked or unavailable. Please disable ad-blockers or content-blockers and try again.");
+        setPurchaseStage("failed");
       }
     } catch (err: any) {
       console.error("Razorpay Checkout Launch Error:", err);
@@ -853,10 +811,18 @@ export default function UpgradeModal({
                       <div className="space-y-3">
                         {/* Dev Sandbox simulation warning if credentials aren't loaded */}
                         {!isConfigured && (
-                          <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-800 text-[10px] leading-normal font-semibold flex items-start gap-1.5">
-                            <AlertTriangle size={14} className="text-amber-600 shrink-0 mt-0.5" />
+                          <div className={`p-3 border rounded-xl text-[10px] leading-normal font-semibold flex items-start gap-1.5 ${isIndia ? "bg-rose-500/10 border-rose-500/20 text-rose-900" : "bg-amber-500/10 border-amber-500/20 text-amber-800"}`}>
+                            <AlertTriangle size={14} className={isIndia ? "text-rose-600 shrink-0 mt-0.5" : "text-amber-600 shrink-0 mt-0.5"} />
                             <div>
-                              <strong>Developer Sandbox Notice:</strong> Credentials not configured in .env. Falling back to secure simulated sandboxes for instant local preview testing.
+                              {isIndia ? (
+                                <>
+                                  <strong>Gateway Key Required:</strong> Your custom Razorpay credentials are not configured. Please provide your Key ID and Secret in the <strong>Settings</strong> tab under <strong>Razorpay Integration Credentials</strong>, or define them on the server to activate the live checkout.
+                                </>
+                              ) : (
+                                <>
+                                  <strong>Developer Sandbox Notice:</strong> Credentials not configured in .env. Falling back to secure simulated sandboxes for instant local preview testing.
+                                </>
+                              )}
                             </div>
                           </div>
                         )}
@@ -866,7 +832,7 @@ export default function UpgradeModal({
                           <div className="space-y-2">
                             <button
                               type="button"
-                              onClick={isConfigured ? handleRazorpayCheckout : handleSimulatedPay}
+                              onClick={handleRazorpayCheckout}
                               className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-extrabold shadow-lg shadow-indigo-600/15 flex items-center justify-center gap-2 cursor-pointer transition-all hover:scale-[1.01]"
                             >
                               <Smartphone size={14} />

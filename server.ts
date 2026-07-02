@@ -300,14 +300,10 @@ app.post("/api/razorpay/create-order", async (req, res) => {
         isSimulated: false,
       });
     } else {
-      console.log(`[Razorpay] Keys not configured. Creating high-fidelity simulated Razorpay order for ${freelancerId}...`);
-      const mockOrderId = `order_rzp_sim_${Math.random().toString(36).substring(2, 12)}`;
-      return res.json({
-        success: true,
-        orderId: mockOrderId,
-        amount: amountInPaise,
-        currency: "INR",
-        isSimulated: true,
+      console.error("[Razorpay] Order creation failed: Live credentials are not configured on the server or profile.");
+      return res.status(400).json({
+        success: false,
+        error: "Razorpay payment gateway credentials are not configured. Please verify your credentials under Settings or configure them in your server environment variables."
       });
     }
   } catch (err: any) {
@@ -357,13 +353,10 @@ app.post("/api/razorpay/verify-payment", async (req, res) => {
         transactionId: paymentId,
       });
     } else {
-      console.log(`[Razorpay] Simulator validation successful for order ${orderId}, payment ${paymentId}`);
-      return res.json({
-        success: true,
-        message: "Simulated Razorpay subscription payment authorized successfully.",
-        gateway: "Razorpay",
-        transactionId: paymentId || `pay_rzp_sim_${Math.random().toString(36).substring(2, 10)}`,
-        isSimulated: true,
+      console.error("[Razorpay] Payment verification failed: Live credentials are not configured on the server.");
+      return res.status(400).json({
+        success: false,
+        error: "Razorpay payment verification failed: Live credentials are not configured on the server."
       });
     }
   } catch (err: any) {
@@ -557,4 +550,9 @@ async function init() {
   });
 }
 
-init();
+export default app;
+
+// Only start the standalone Express listener if NOT running inside Vercel's Serverless environment
+if (!process.env.VERCEL) {
+  init();
+}
