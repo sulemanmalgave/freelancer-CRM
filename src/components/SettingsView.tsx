@@ -22,6 +22,8 @@ export default function SettingsView({
   const [currency, setCurrency] = useState(profile?.currency || "USD");
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
+  const [razorpayKeyId, setRazorpayKeyId] = useState(profile?.razorpayKeyId || "");
+  const [razorpayKeySecret, setRazorpayKeySecret] = useState(profile?.razorpayKeySecret || "");
 
   const currenciesList = [
     { code: "USD", symbol: "$", label: "US Dollar ($)" },
@@ -40,6 +42,8 @@ export default function SettingsView({
       name: name.trim(),
       businessName: businessName.trim(),
       currency,
+      razorpayKeyId: razorpayKeyId.trim(),
+      razorpayKeySecret: razorpayKeySecret.trim(),
     });
 
     setSaveSuccess(true);
@@ -114,6 +118,44 @@ export default function SettingsView({
                 </option>
               ))}
             </select>
+          </div>
+
+          <div className="pt-5 border-t border-slate-100 space-y-4">
+            <h4 className="font-bold text-xs uppercase tracking-wider text-indigo-600 flex items-center gap-1.5">
+              <Coins className="w-4 h-4 text-indigo-500 animate-pulse" />
+              <span>Razorpay Integration Credentials</span>
+            </h4>
+            <p className="text-[11px] text-slate-400 leading-normal">
+              Provide your personal Razorpay API credentials to bypass the default system sandbox and connect your custom gateway.
+            </p>
+
+            <div className="grid sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-slate-505 font-semibold text-xs mb-1">
+                  Razorpay Key ID
+                </label>
+                <input
+                  type="text"
+                  value={razorpayKeyId}
+                  onChange={(e) => setRazorpayKeyId(e.target.value)}
+                  placeholder="rzp_test_..."
+                  className="w-full py-2.5 px-4 text-xs glass-input rounded-xl text-slate-850 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-505 font-semibold text-xs mb-1">
+                  Razorpay Key Secret
+                </label>
+                <input
+                  type="password"
+                  value={razorpayKeySecret}
+                  onChange={(e) => setRazorpayKeySecret(e.target.value)}
+                  placeholder="Keep secure"
+                  className="w-full py-2.5 px-4 text-xs glass-input rounded-xl text-slate-850 focus:outline-none"
+                />
+              </div>
+            </div>
           </div>
 
           <button

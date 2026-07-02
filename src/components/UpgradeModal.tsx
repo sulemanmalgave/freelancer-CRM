@@ -106,7 +106,7 @@ export default function UpgradeModal({
   useEffect(() => {
     if (isOpen) {
       setIsLoadingConfig(true);
-      fetch("/api/payment/config")
+      fetch(`/api/payment/config?freelancerId=${profile?.id || ""}`)
         .then((r) => r.json())
         .then((data) => {
           setPaymentConfig(data);

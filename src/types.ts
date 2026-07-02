@@ -16,6 +16,8 @@ export interface FreelancerProfile {
   purchaseDate?: string;
   expiryDate?: string;
   transactionId?: string;
+  razorpayKeyId?: string;
+  razorpayKeySecret?: string;
 }
 
 export interface Client {

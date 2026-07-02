@@ -31,6 +31,50 @@ function getStripe(): Stripe {
   return stripeClient;
 }
 
+import { initializeApp, getApps, getApp } from "firebase/app";
+import { getFirestore, doc, getDoc } from "firebase/firestore";
+
+const firebaseConfig = {
+  projectId: "gen-lang-client-0198820455",
+  appId: "1:446581031176:web:99934ad9fce3592ca2ecbd",
+  apiKey: "AIzaSyCBcHLWdB7EnQSpkmxnDEbmcFs7ICQyeoA",
+  authDomain: "gen-lang-client-0198820455.firebaseapp.com",
+  storageBucket: "gen-lang-client-0198820455.firebasestorage.app",
+  messagingSenderId: "446581031176"
+};
+
+const databaseId = "ai-studio-d5cae848-c1ed-4f2e-9f89-e9c69ed15c6c";
+
+let dbInstance: any = null;
+
+function getFirestoreDb() {
+  if (!dbInstance) {
+    try {
+      const appInstance = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+      dbInstance = getFirestore(appInstance, databaseId);
+    } catch (e) {
+      console.error("Failed to initialize firebase inside server.ts:", e);
+    }
+  }
+  return dbInstance;
+}
+
+async function getFreelancerProfile(freelancerId: string) {
+  if (!freelancerId) return null;
+  const db = getFirestoreDb();
+  if (!db) return null;
+  try {
+    const docRef = doc(db, "freelancers", freelancerId);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      return snap.data();
+    }
+  } catch (e) {
+    console.error("Error fetching freelancer profile in server.ts:", e);
+  }
+  return null;
+}
+
 // API Routes
 // 1. Health check
 app.get("/api/health", (req, res) => {
@@ -178,11 +222,24 @@ app.get("/api/stripe/verify-session", async (req, res) => {
 // ==========================================
 
 // 1. Fetch public payment config (Keys are safe on backend, client IDs exposed securely)
-app.get("/api/payment/config", (req, res) => {
+app.get("/api/payment/config", async (req, res) => {
+  const { freelancerId } = req.query;
+  let customRazorpayKeyId = null;
+
+  if (typeof freelancerId === "string" && freelancerId) {
+    const profile = await getFreelancerProfile(freelancerId);
+    if (profile && profile.razorpayKeyId) {
+      customRazorpayKeyId = profile.razorpayKeyId;
+    }
+  }
+
+  const finalRazorpayKeyId = customRazorpayKeyId || process.env.VITE_RAZORPAY_KEY_ID || "rzp_test_simulated123";
+  const hasRazorpayConfigured = !!customRazorpayKeyId || !!process.env.VITE_RAZORPAY_KEY_ID;
+
   res.json({
-    razorpayKeyId: process.env.VITE_RAZORPAY_KEY_ID || "rzp_test_simulated123",
+    razorpayKeyId: finalRazorpayKeyId,
     paypalClientId: process.env.VITE_PAYPAL_CLIENT_ID || "sb", // 'sb' is the standard sandbox client-id for PayPal
-    razorpayConfigured: !!process.env.VITE_RAZORPAY_KEY_ID,
+    razorpayConfigured: hasRazorpayConfigured,
     paypalConfigured: !!process.env.VITE_PAYPAL_CLIENT_ID,
   });
 });
@@ -198,8 +255,15 @@ app.post("/api/razorpay/create-order", async (req, res) => {
     // Amount should be in paise for Indian currency
     const amountInPaise = Math.round(amount * 100);
 
-    const keyId = process.env.VITE_RAZORPAY_KEY_ID;
-    const keySecret = process.env.RAZORPAY_KEY_SECRET;
+    let keyId = process.env.VITE_RAZORPAY_KEY_ID;
+    let keySecret = process.env.RAZORPAY_KEY_SECRET;
+
+    const profile = await getFreelancerProfile(freelancerId);
+    if (profile && profile.razorpayKeyId && profile.razorpayKeySecret) {
+      keyId = profile.razorpayKeyId;
+      keySecret = profile.razorpayKeySecret;
+      console.log(`[Razorpay] Creating real order with custom keys for freelancer: ${freelancerId}`);
+    }
 
     if (keyId && keySecret) {
       console.log(`[Razorpay] Creating real order for ${freelancerId} (${planName}, Amount: ₹${amount})`);
@@ -260,8 +324,15 @@ app.post("/api/razorpay/verify-payment", async (req, res) => {
       return res.status(400).json({ error: "Missing required fields for payment verification" });
     }
 
-    const keyId = process.env.VITE_RAZORPAY_KEY_ID;
-    const keySecret = process.env.RAZORPAY_KEY_SECRET;
+    let keyId = process.env.VITE_RAZORPAY_KEY_ID;
+    let keySecret = process.env.RAZORPAY_KEY_SECRET;
+
+    const profile = await getFreelancerProfile(freelancerId);
+    if (profile && profile.razorpayKeyId && profile.razorpayKeySecret) {
+      keyId = profile.razorpayKeyId;
+      keySecret = profile.razorpayKeySecret;
+      console.log(`[Razorpay] Verifying signature with custom keys for freelancer: ${freelancerId}`);
+    }
 
     if (keyId && keySecret) {
       if (!signature) {
