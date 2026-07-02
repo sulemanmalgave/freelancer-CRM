@@ -233,14 +233,20 @@ app.get("/api/payment/config", async (req, res) => {
     }
   }
 
-  const finalRazorpayKeyId = customRazorpayKeyId || process.env.VITE_RAZORPAY_KEY_ID || "rzp_test_simulated123";
-  const hasRazorpayConfigured = !!customRazorpayKeyId || !!process.env.VITE_RAZORPAY_KEY_ID;
+  const systemRazorpayKeyId = process.env.RAZORPAY_KEY_ID || process.env.VITE_RAZORPAY_KEY_ID;
+  const systemRazorpayKeySecret = process.env.RAZORPAY_KEY_SECRET || process.env.VITE_RAZORPAY_KEY_SECRET;
+
+  const finalRazorpayKeyId = customRazorpayKeyId || systemRazorpayKeyId || "";
+  const hasRazorpayConfigured = !!customRazorpayKeyId || (!!systemRazorpayKeyId && !!systemRazorpayKeySecret);
+
+  const finalPaypalClientId = process.env.PAYPAL_CLIENT_ID || process.env.VITE_PAYPAL_CLIENT_ID || "sb";
+  const hasPaypalConfigured = !!process.env.PAYPAL_CLIENT_ID || !!process.env.VITE_PAYPAL_CLIENT_ID;
 
   res.json({
     razorpayKeyId: finalRazorpayKeyId,
-    paypalClientId: process.env.VITE_PAYPAL_CLIENT_ID || "sb", // 'sb' is the standard sandbox client-id for PayPal
+    paypalClientId: finalPaypalClientId,
     razorpayConfigured: hasRazorpayConfigured,
-    paypalConfigured: !!process.env.VITE_PAYPAL_CLIENT_ID,
+    paypalConfigured: hasPaypalConfigured,
   });
 });
 
@@ -255,8 +261,8 @@ app.post("/api/razorpay/create-order", async (req, res) => {
     // Amount should be in paise for Indian currency
     const amountInPaise = Math.round(amount * 100);
 
-    let keyId = process.env.VITE_RAZORPAY_KEY_ID;
-    let keySecret = process.env.RAZORPAY_KEY_SECRET;
+    let keyId = process.env.RAZORPAY_KEY_ID || process.env.VITE_RAZORPAY_KEY_ID;
+    let keySecret = process.env.RAZORPAY_KEY_SECRET || process.env.VITE_RAZORPAY_KEY_SECRET;
 
     const profile = await getFreelancerProfile(freelancerId);
     if (profile && profile.razorpayKeyId && profile.razorpayKeySecret) {
@@ -320,8 +326,8 @@ app.post("/api/razorpay/verify-payment", async (req, res) => {
       return res.status(400).json({ error: "Missing required fields for payment verification" });
     }
 
-    let keyId = process.env.VITE_RAZORPAY_KEY_ID;
-    let keySecret = process.env.RAZORPAY_KEY_SECRET;
+    let keyId = process.env.RAZORPAY_KEY_ID || process.env.VITE_RAZORPAY_KEY_ID;
+    let keySecret = process.env.RAZORPAY_KEY_SECRET || process.env.VITE_RAZORPAY_KEY_SECRET;
 
     const profile = await getFreelancerProfile(freelancerId);
     if (profile && profile.razorpayKeyId && profile.razorpayKeySecret) {

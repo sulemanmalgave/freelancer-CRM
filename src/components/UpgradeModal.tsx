@@ -280,7 +280,10 @@ export default function UpgradeModal({
         "[Razorpay] Launching client payment panel overlays..."
       ]);
 
-      const keyId = paymentConfig?.razorpayKeyId || "rzp_test_simulated123";
+      const keyId = paymentConfig?.razorpayKeyId || "";
+      if (!keyId) {
+        throw new Error("Razorpay Live Key ID is not configured. Please set it in your Settings or server environment variables.");
+      }
 
       const options = {
         key: keyId,
