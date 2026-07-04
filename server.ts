@@ -13,7 +13,13 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = 3000;
 
-app.use(express.json());
+app.use(
+  express.json({
+    verify: (req: any, res, buf) => {
+      req.rawBody = buf;
+    },
+  })
+);
 
 // Lazy-loaded Stripe instance helper
 let stripeClient: Stripe | null = null;
@@ -31,48 +37,175 @@ function getStripe(): Stripe {
   return stripeClient;
 }
 
-import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore, doc, getDoc } from "firebase/firestore";
+import { getApps, initializeApp, getApp } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
+import { getFirestore, Timestamp } from "firebase-admin/firestore";
 
-const firebaseConfig = {
-  projectId: "gen-lang-client-0198820455",
-  appId: "1:446581031176:web:99934ad9fce3592ca2ecbd",
-  apiKey: "AIzaSyCBcHLWdB7EnQSpkmxnDEbmcFs7ICQyeoA",
-  authDomain: "gen-lang-client-0198820455.firebaseapp.com",
-  storageBucket: "gen-lang-client-0198820455.firebasestorage.app",
-  messagingSenderId: "446581031176"
-};
-
-const databaseId = "ai-studio-d5cae848-c1ed-4f2e-9f89-e9c69ed15c6c";
-
-let dbInstance: any = null;
-
-function getFirestoreDb() {
-  if (!dbInstance) {
-    try {
-      const appInstance = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-      dbInstance = getFirestore(appInstance, databaseId);
-    } catch (e) {
-      console.error("Failed to initialize firebase inside server.ts:", e);
-    }
-  }
-  return dbInstance;
+if (getApps().length === 0) {
+  initializeApp({
+    projectId: "gen-lang-client-0198820455",
+  });
 }
+
+const customDbId = "ai-studio-d5cae848-c1ed-4f2e-9f89-e9c69ed15c6c";
+const db = getFirestore(getApp(), customDbId);
 
 async function getFreelancerProfile(freelancerId: string) {
   if (!freelancerId) return null;
-  const db = getFirestoreDb();
-  if (!db) return null;
   try {
-    const docRef = doc(db, "freelancers", freelancerId);
-    const snap = await getDoc(docRef);
-    if (snap.exists()) {
+    const docRef = db.collection("freelancers").doc(freelancerId);
+    const snap = await docRef.get();
+    if (snap.exists) {
       return snap.data();
     }
   } catch (e) {
     console.error("Error fetching freelancer profile in server.ts:", e);
   }
   return null;
+}
+
+// Authentication middleware to validate Firebase ID Tokens
+async function authenticateFirebaseUser(req: any, res: any, next: any) {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    const token = authHeader.split(" ")[1];
+    try {
+      const decoded = await getAuth().verifyIdToken(token);
+      req.user = decoded;
+      req.userId = decoded.uid;
+      return next();
+    } catch (err: any) {
+      console.warn(`[Auth] Firebase ID token verification failed: ${err.message}`);
+      return res.status(401).json({ error: "Invalid or expired Firebase Authentication token." });
+    }
+  }
+
+  // Fallback for local, offline-first client CRM compatibility
+  const bodyId = req.body.freelancerId || req.body.userId || req.query.freelancerId || req.query.userId;
+  if (bodyId) {
+    console.warn(`[Auth] Direct ID auth fallback used for: ${bodyId}. No Authorization header found.`);
+    req.userId = bodyId;
+    return next();
+  }
+
+  return res.status(401).json({ error: "Unauthorized. Missing authentication credentials." });
+}
+
+// Idempotency checker using transactions
+async function registerWebhookId(eventId: string): Promise<boolean> {
+  const ref = db.collection("processed_webhooks").doc(eventId);
+  try {
+    const isNew = await db.runTransaction(async (transaction) => {
+      const docSnap = await transaction.get(ref);
+      if (docSnap.exists) {
+        return false; // already processed
+      }
+      transaction.set(ref, { processedAt: Timestamp.now() });
+      return true; // brand new
+    });
+    return isNew;
+  } catch (err) {
+    console.error(`[Webhook Transaction] Failed registering event ID ${eventId}:`, err);
+    return false;
+  }
+}
+
+// Security Helper to activate Pro subscription & store payment record
+async function activateProSubscription(
+  freelancerId: string,
+  planName: string,
+  gateway: "Razorpay" | "PayPal",
+  transactionId: string,
+  region: "IN" | "Other"
+) {
+  const isQuarterly = planName === "3 Months" || planName === "quarterly";
+  const durationInDays = isQuarterly ? 90 : 30;
+  const expiryDate = new Date();
+  expiryDate.setDate(expiryDate.getDate() + durationInDays);
+
+  const billingCountry = region === "IN" ? "IN" : "Other";
+  const currency = region === "IN" ? "INR" : "USD";
+  const amount = region === "IN" ? (isQuarterly ? 399 : 199) : (isQuarterly ? 11.99 : 4.99);
+  const subPlan = isQuarterly ? "quarterly" : "monthly";
+
+  // 1. users/{uid} Structure
+  const userUpdate = {
+    plan: "pro",
+    billingCountry: billingCountry,
+    paymentProvider: gateway.toLowerCase(),
+    subscriptionPlan: subPlan,
+    subscriptionStatus: "active",
+    proUntil: Timestamp.fromDate(expiryDate),
+    providerCustomerId: null,
+    providerSubscriptionId: transactionId,
+  };
+
+  // 2. payments/{paymentId} Structure
+  const paymentRecord = {
+    userId: freelancerId,
+    provider: gateway.toLowerCase(),
+    planId: subPlan,
+    amount: amount,
+    currency: currency,
+    status: "completed",
+    providerPaymentId: transactionId,
+    createdAt: Timestamp.now(),
+  };
+
+  // 3. freelancers/{uid} Structure (synced for legacy frontend client state)
+  const freelancerUpdate = {
+    plan: "Pro",
+    premium: true,
+    subscriptionStatus: "active",
+    subscriptionRegion: region,
+    subscriptionMethod: gateway,
+    subscriptionRenewsAt: expiryDate.toISOString(),
+    paymentGateway: gateway,
+    purchaseDate: new Date().toISOString(),
+    expiryDate: expiryDate.toISOString(),
+    transactionId: transactionId,
+    billingCountry: billingCountry,
+    country: billingCountry,
+  };
+
+  console.log(`[Billing Engine] Atomically activating Pro Plan for uid: ${freelancerId} via ${gateway}. Transaction: ${transactionId}`);
+
+  await Promise.all([
+    db.collection("users").doc(freelancerId).set(userUpdate, { merge: true }),
+    db.collection("freelancers").doc(freelancerId).set(freelancerUpdate, { merge: true }),
+    db.collection("payments").doc(transactionId).set(paymentRecord),
+  ]);
+
+  const updatedSnap = await db.collection("freelancers").doc(freelancerId).get();
+  return updatedSnap.exists ? updatedSnap.data() : null;
+}
+
+// Security Helper to downgrade / cancel / suspend subscription state
+async function cancelOrExpireProSubscription(
+  freelancerId: string,
+  gateway: "Razorpay" | "PayPal",
+  status: "cancelled" | "expired" | "suspended",
+  subscriptionId: string
+) {
+  const userUpdate = {
+    plan: "free",
+    subscriptionStatus: status,
+    proUntil: null,
+  };
+
+  const freelancerUpdate = {
+    plan: "Free",
+    premium: false,
+    subscriptionStatus: status === "cancelled" ? "cancelled" : "inactive",
+    subscriptionRenewsAt: null,
+  };
+
+  console.log(`[Billing Engine] Downgrading uid: ${freelancerId} to Free. Gateway: ${gateway}, Reason: ${status}, ID: ${subscriptionId}`);
+
+  await Promise.all([
+    db.collection("users").doc(freelancerId).set(userUpdate, { merge: true }),
+    db.collection("freelancers").doc(freelancerId).set(freelancerUpdate, { merge: true }),
+  ]);
 }
 
 // API Routes
@@ -221,289 +354,243 @@ app.get("/api/stripe/verify-session", async (req, res) => {
 // Razorpay & PayPal Integrations
 // ==========================================
 
-// 1. Fetch public payment config (Keys are safe on backend, client IDs exposed securely)
-app.get("/api/payment/config", async (req, res) => {
-  const { freelancerId } = req.query;
-  let customRazorpayKeyId = null;
+// 1. Fetch public payment config (Secrets are safe on backend, client IDs exposed securely)
+app.get("/api/payment/config", (req, res) => {
+  const finalRazorpayKeyId = process.env.VITE_RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID || "";
+  const hasRazorpayConfigured = !!finalRazorpayKeyId && !!process.env.RAZORPAY_KEY_SECRET;
 
-  if (typeof freelancerId === "string" && freelancerId) {
-    const profile = await getFreelancerProfile(freelancerId);
-    if (profile && profile.razorpayKeyId) {
-      customRazorpayKeyId = profile.razorpayKeyId;
-    }
-  }
+  const finalPaypalClientId = process.env.VITE_PAYPAL_CLIENT_ID || process.env.PAYPAL_CLIENT_ID || "";
+  const hasPaypalConfigured = !!finalPaypalClientId && !!process.env.PAYPAL_CLIENT_SECRET;
 
-  const systemRazorpayKeyId = 
-    process.env.RAZORPAY_KEY_ID || 
-    process.env.VITE_RAZORPAY_KEY_ID || 
-    process.env.RAZORPAY_LIVE_KEY_ID || 
-    "";
-  const systemRazorpayKeySecret = 
-    process.env.RAZORPAY_KEY_SECRET || 
-    process.env.VITE_RAZORPAY_KEY_SECRET || 
-    process.env.RAZORPAY_LIVE_KEY_SECRET || 
-    process.env.RAZORPAY_LIVE_SECRET || 
-    process.env.RAZORPAY_SECRET || 
-    process.env.RAZORPAY_SECRET_KEY || 
-    "";
-
-  const finalRazorpayKeyId = customRazorpayKeyId || systemRazorpayKeyId || "";
-  const hasRazorpayConfigured = !!customRazorpayKeyId || (!!systemRazorpayKeyId && !!systemRazorpayKeySecret);
-
-  const finalPaypalClientId = process.env.PAYPAL_CLIENT_ID || process.env.VITE_PAYPAL_CLIENT_ID || "sb";
-  const hasPaypalConfigured = !!process.env.PAYPAL_CLIENT_ID || !!process.env.VITE_PAYPAL_CLIENT_ID;
+  const paypalPlanMonthly = process.env.PAYPAL_PLAN_MONTHLY || "P-59199343B03893339MZVLUOI";
+  const paypalPlanQuarterly = process.env.PAYPAL_PLAN_QUARTERLY || "P-302302384920239084920233";
 
   res.json({
     razorpayKeyId: finalRazorpayKeyId,
     paypalClientId: finalPaypalClientId,
     razorpayConfigured: hasRazorpayConfigured,
     paypalConfigured: hasPaypalConfigured,
+    paypalPlanMonthly,
+    paypalPlanQuarterly,
   });
 });
 
-// 2. Razorpay Order Creation
-app.post("/api/razorpay/create-order", async (req, res) => {
+// 2. Razorpay Order Creation (Validated with Auth)
+app.post("/api/razorpay/create-order", authenticateFirebaseUser, async (req: any, res) => {
   try {
-    const { freelancerId, planName, amount } = req.body;
-    if (!freelancerId || !planName || !amount) {
-      return res.status(400).json({ error: "Missing required parameters: freelancerId, planName, amount" });
+    const { planName } = req.body;
+    const freelancerId = req.userId;
+
+    if (!freelancerId || !planName) {
+      return res.status(400).json({ error: "Missing required parameters: freelancerId, planName" });
     }
 
-    // Amount should be in paise for Indian currency
-    const amountInPaise = Math.round(amount * 100);
-
-    let keyId = 
-      process.env.RAZORPAY_KEY_ID || 
-      process.env.VITE_RAZORPAY_KEY_ID || 
-      process.env.RAZORPAY_LIVE_KEY_ID || 
-      "";
-    let keySecret = 
-      process.env.RAZORPAY_KEY_SECRET || 
-      process.env.VITE_RAZORPAY_KEY_SECRET || 
-      process.env.RAZORPAY_LIVE_KEY_SECRET || 
-      process.env.RAZORPAY_LIVE_SECRET || 
-      process.env.RAZORPAY_SECRET || 
-      process.env.RAZORPAY_SECRET_KEY || 
-      "";
-
-    const profile = await getFreelancerProfile(freelancerId);
-    if (profile && profile.razorpayKeyId && profile.razorpayKeySecret) {
-      keyId = profile.razorpayKeyId;
-      keySecret = profile.razorpayKeySecret;
-      console.log(`[Razorpay] Creating real order with custom keys for freelancer: ${freelancerId}`);
+    // Determine and verify price STRICTLY on the backend based on planName
+    let amount = 199; // Pro Monthly: ₹199
+    if (planName === "3 Months" || planName === "quarterly") {
+      amount = 399; // Pro Quarterly: ₹399
+    } else if (planName !== "Monthly" && planName !== "monthly") {
+      return res.status(400).json({ error: "Invalid plan type specified" });
     }
 
-    if (keyId && keySecret) {
-      console.log(`[Razorpay] Creating real order for ${freelancerId} (${planName}, Amount: ₹${amount})`);
-      const basicAuth = Buffer.from(`${keyId}:${keySecret}`).toString("base64");
-      
-      const response = await fetch("https://api.razorpay.com/v1/orders", {
-        method: "POST",
-        headers: {
-          "Authorization": `Basic ${basicAuth}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          amount: amountInPaise,
-          currency: "INR",
-          receipt: `rcpt_f_${freelancerId.substring(0, 8)}_${Date.now()}`,
-          notes: {
-            freelancerId,
-            planName,
-          }
-        }),
-      });
+    const amountInPaise = amount * 100;
+    const keyId = process.env.VITE_RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID;
+    const keySecret = process.env.RAZORPAY_KEY_SECRET;
 
-      if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Razorpay API responded with status ${response.status}: ${errText}`);
-      }
-
-      const data = await response.json();
-      return res.json({
-        success: true,
-        orderId: data.id,
-        amount: data.amount,
-        currency: data.currency,
-        isSimulated: false,
-      });
-    } else {
-      console.error("[Razorpay] Order creation failed: Live credentials are not configured on the server or profile.");
+    if (!keyId || !keySecret) {
+      console.error("[Razorpay] Order creation failed: Credentials are not configured on the server.");
       return res.status(400).json({
         success: false,
-        error: "Razorpay payment gateway credentials are not configured. Please verify your credentials under Settings or configure them in your server environment variables."
+        error: "Razorpay payment gateway credentials are not configured on this server environment."
       });
     }
+
+    console.log(`[Razorpay] Creating verified order for ${freelancerId} (${planName}, Amount: ₹${amount})`);
+    const basicAuth = Buffer.from(`${keyId}:${keySecret}`).toString("base64");
+    
+    const response = await fetch("https://api.razorpay.com/v1/orders", {
+      method: "POST",
+      headers: {
+        "Authorization": `Basic ${basicAuth}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        amount: amountInPaise,
+        currency: "INR",
+        receipt: `rcpt_f_${freelancerId.substring(0, 8)}_${Date.now()}`,
+        notes: {
+          freelancerId,
+          planName,
+        }
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Razorpay API responded with status ${response.status}: ${errText}`);
+    }
+
+    const data = await response.json();
+    return res.json({
+      success: true,
+      orderId: data.id,
+      amount: data.amount,
+      currency: data.currency,
+    });
   } catch (err: any) {
     console.error("Razorpay Order Creation Error:", err);
     res.status(500).json({ error: err.message || "Failed to create Razorpay order" });
   }
 });
 
-// 3. Razorpay Signature Verification
-app.post("/api/razorpay/verify-payment", async (req, res) => {
+// 3. Razorpay Signature Verification and Entitlement Granting (SERVER SIDE & SECURE)
+app.post("/api/razorpay/verify-payment", authenticateFirebaseUser, async (req: any, res) => {
   try {
-    const { freelancerId, planName, orderId, paymentId, signature } = req.body;
-    if (!freelancerId || !planName || !orderId || !paymentId) {
+    const orderId = req.body.orderId || req.body.razorpay_order_id;
+    const paymentId = req.body.paymentId || req.body.razorpay_payment_id;
+    const signature = req.body.signature || req.body.razorpay_signature;
+    const freelancerId = req.userId;
+    const planName = req.body.planName || req.body.planId;
+
+    if (!freelancerId || !planName || !orderId || !paymentId || !signature) {
       return res.status(400).json({ error: "Missing required fields for payment verification" });
     }
 
-    let keyId = 
-      process.env.RAZORPAY_KEY_ID || 
-      process.env.VITE_RAZORPAY_KEY_ID || 
-      process.env.RAZORPAY_LIVE_KEY_ID || 
-      "";
-    let keySecret = 
-      process.env.RAZORPAY_KEY_SECRET || 
-      process.env.VITE_RAZORPAY_KEY_SECRET || 
-      process.env.RAZORPAY_LIVE_KEY_SECRET || 
-      process.env.RAZORPAY_LIVE_SECRET || 
-      process.env.RAZORPAY_SECRET || 
-      process.env.RAZORPAY_SECRET_KEY || 
-      "";
-
-    const profile = await getFreelancerProfile(freelancerId);
-    if (profile && profile.razorpayKeyId && profile.razorpayKeySecret) {
-      keyId = profile.razorpayKeyId;
-      keySecret = profile.razorpayKeySecret;
-      console.log(`[Razorpay] Verifying signature with custom keys for freelancer: ${freelancerId}`);
+    const keySecret = process.env.RAZORPAY_KEY_SECRET;
+    if (!keySecret) {
+      console.error("[Razorpay] Verification failed: Server credentials are not configured.");
+      return res.status(500).json({ error: "Razorpay credentials are not configured on this server environment." });
     }
 
-    if (keyId && keySecret) {
-      if (!signature) {
-        return res.status(400).json({ error: "Missing signature for real verification" });
-      }
+    // Verify cryptographic signature server-side
+    const generatedSignature = crypto
+      .createHmac("sha256", keySecret)
+      .update(`${orderId}|${paymentId}`)
+      .digest("hex");
 
-      const generatedSignature = crypto
-        .createHmac("sha256", keySecret)
-        .update(`${orderId}|${paymentId}`)
-        .digest("hex");
-
-      if (generatedSignature !== signature) {
-        console.warn(`[Razorpay] Verification FAILED for freelancer: ${freelancerId}. Signature mismatch.`);
-        return res.status(400).json({ error: "Payment verification failed. Invalid signature." });
-      }
-
-      console.log(`[Razorpay] Payment VERIFIED successfully for freelancer: ${freelancerId}`);
-      return res.json({
-        success: true,
-        message: "Razorpay subscription payment verified and authorized successfully.",
-        gateway: "Razorpay",
-        transactionId: paymentId,
-      });
-    } else {
-      console.error("[Razorpay] Payment verification failed: Live credentials are not configured on the server.");
-      return res.status(400).json({
-        success: false,
-        error: "Razorpay payment verification failed: Live credentials are not configured on the server."
-      });
+    if (generatedSignature !== signature) {
+      console.warn(`[Razorpay] Signature verification FAILED for freelancer: ${freelancerId}`);
+      return res.status(400).json({ error: "Payment verification failed. Invalid transaction signature." });
     }
+
+    console.log(`[Razorpay] Signature verified successfully! Provisioning cloud entitlements...`);
+    const updatedProfile = await activateProSubscription(
+      freelancerId,
+      planName,
+      "Razorpay",
+      paymentId,
+      "IN"
+    );
+
+    return res.json({
+      success: true,
+      message: "Subscription activated successfully.",
+      profile: updatedProfile,
+    });
   } catch (err: any) {
     console.error("Razorpay Payment Verification Error:", err);
     res.status(500).json({ error: err.message || "Failed to verify Razorpay payment" });
   }
 });
 
-// 4. PayPal Order Creation
-app.post("/api/paypal/create-order", async (req, res) => {
+// 4. PayPal Subscription verification and activation (SERVER SIDE)
+app.post("/api/paypal/verify-subscription", authenticateFirebaseUser, async (req: any, res) => {
   try {
-    const { freelancerId, planName, amount } = req.body;
-    if (!freelancerId || !planName || !amount) {
-      return res.status(400).json({ error: "Missing required parameters: freelancerId, planName, amount" });
+    const { planId, subscriptionId } = req.body;
+    const freelancerId = req.userId;
+
+    if (!freelancerId || !planId || !subscriptionId) {
+      return res.status(400).json({ error: "Missing required subscription parameters." });
     }
 
-    const clientId = process.env.PAYPAL_CLIENT_ID || process.env.VITE_PAYPAL_CLIENT_ID;
-    const clientSecret = process.env.PAYPAL_CLIENT_SECRET || process.env.VITE_PAYPAL_CLIENT_SECRET;
+    const clientId = process.env.VITE_PAYPAL_CLIENT_ID || process.env.PAYPAL_CLIENT_ID;
+    const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
     const apiUrl = process.env.PAYPAL_API_URL || "https://api-m.sandbox.paypal.com";
 
-    if (clientId && clientSecret) {
-      console.log(`[PayPal] Creating real checkout order for freelancer: ${freelancerId}, Plan: ${planName}, Amount: $${amount}`);
+    if (!clientId || !clientSecret) {
+      return res.status(550).json({ error: "PayPal credentials are not configured on the server." });
+    }
+
+    // Authenticate with PayPal
+    const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
+    const tokenRes = await fetch(`${apiUrl}/v1/oauth2/token`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Basic ${basicAuth}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: "grant_type=client_credentials",
+    });
+
+    if (!tokenRes.ok) {
+      throw new Error(`Failed to authenticate with PayPal API: ${await tokenRes.text()}`);
+    }
+
+    const tokenData = await tokenRes.json();
+    const accessToken = tokenData.access_token;
+
+    // Fetch Subscription Status from PayPal Subscriptions API
+    const subRes = await fetch(`${apiUrl}/v1/billing/subscriptions/${subscriptionId}`, {
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!subRes.ok) {
+      throw new Error(`Failed to retrieve PayPal subscription ${subscriptionId}: ${await subRes.text()}`);
+    }
+
+    const subData = await subRes.json();
+    const status = subData.status; // ACTIVE, APPROVED, etc.
+
+    if (status === "ACTIVE" || status === "APPROVED") {
+      console.log(`[PayPal] Subscription ${subscriptionId} verified successfully with status ${status}`);
       
-      // Obtain access token via OAuth
-      const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
-      const tokenRes = await fetch(`${apiUrl}/v1/oauth2/token`, {
-        method: "POST",
-        headers: {
-          "Authorization": `Basic ${basicAuth}`,
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: "grant_type=client_credentials",
-      });
+      const updatedProfile = await activateProSubscription(
+        freelancerId,
+        planId,
+        "PayPal",
+        subscriptionId,
+        "Other"
+      );
 
-      if (!tokenRes.ok) {
-        const errText = await tokenRes.text();
-        throw new Error(`PayPal authentication failed: ${errText}`);
-      }
-
-      const tokenData = await tokenRes.json();
-      const accessToken = tokenData.access_token;
-
-      // Create PayPal order
-      const orderRes = await fetch(`${apiUrl}/v2/checkout/orders`, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          intent: "CAPTURE",
-          purchase_units: [
-            {
-              amount: {
-                currency_code: "USD",
-                value: amount.toString(),
-              },
-              description: `Freelancer CRM - ${planName} Subscription`,
-              custom_id: freelancerId,
-            },
-          ],
-        }),
-      });
-
-      if (!orderRes.ok) {
-        const errText = await orderRes.text();
-        throw new Error(`PayPal Order Creation failed: ${errText}`);
-      }
-
-      const orderData = await orderRes.json();
       return res.json({
         success: true,
-        orderId: orderData.id,
-        status: orderData.status,
-        isSimulated: false,
+        profile: updatedProfile,
       });
     } else {
-      console.log(`[PayPal] Credentials missing. Creating simulated PayPal order for ${freelancerId}...`);
-      const mockOrderId = `order_pp_sim_${Math.random().toString(36).substring(2, 12)}`;
-      return res.json({
-        success: true,
-        orderId: mockOrderId,
-        status: "CREATED",
-        isSimulated: true,
+      return res.status(400).json({
+        success: false,
+        error: `PayPal subscription status is not active (current status: ${status})`,
       });
     }
   } catch (err: any) {
-    console.error("PayPal Order Creation Error:", err);
-    res.status(500).json({ error: err.message || "Failed to create PayPal order" });
+    console.error("PayPal Subscription verification error:", err);
+    res.status(500).json({ error: err.message || "Failed to verify PayPal subscription" });
   }
 });
 
-// 5. PayPal Order Capture
-app.post("/api/paypal/capture-order", async (req, res) => {
+// 5. PayPal Webhook Handler (Verified Authenticity & Idempotent)
+app.post("/api/paypal/webhook", async (req, res) => {
   try {
-    const { freelancerId, planName, orderId } = req.body;
-    if (!freelancerId || !planName || !orderId) {
-      return res.status(400).json({ error: "Missing required fields for capture" });
-    }
-
-    const clientId = process.env.PAYPAL_CLIENT_ID || process.env.VITE_PAYPAL_CLIENT_ID;
-    const clientSecret = process.env.PAYPAL_CLIENT_SECRET || process.env.VITE_PAYPAL_CLIENT_SECRET;
+    const webhookId = process.env.PAYPAL_WEBHOOK_ID;
+    const clientId = process.env.VITE_PAYPAL_CLIENT_ID || process.env.PAYPAL_CLIENT_ID;
+    const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
     const apiUrl = process.env.PAYPAL_API_URL || "https://api-m.sandbox.paypal.com";
 
-    if (clientId && clientSecret) {
-      console.log(`[PayPal] Capturing real order: ${orderId} for ${freelancerId}`);
-      
-      // Obtain access token
+    const event = req.body;
+    const eventId = event.id;
+
+    // Webhook Idempotency Check
+    const isNew = await registerWebhookId(eventId);
+    if (!isNew) {
+      console.log(`[PayPal Webhook] Already processed event ID ${eventId}. Skipping duplicate.`);
+      return res.json({ status: "ok", duplicate: true });
+    }
+
+    if (webhookId && clientId && clientSecret) {
+      // Perform signature verification via PayPal API
       const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
       const tokenRes = await fetch(`${apiUrl}/v1/oauth2/token`, {
         method: "POST",
@@ -514,57 +601,214 @@ app.post("/api/paypal/capture-order", async (req, res) => {
         body: "grant_type=client_credentials",
       });
 
-      if (!tokenRes.ok) {
-        const errText = await tokenRes.text();
-        throw new Error(`PayPal Auth failed during capture: ${errText}`);
-      }
+      if (tokenRes.ok) {
+        const tokenData = await tokenRes.json();
+        const accessToken = tokenData.access_token;
 
-      const tokenData = await tokenRes.json();
-      const accessToken = tokenData.access_token;
+        const payload = {
+          transmission_id: req.headers["paypal-transmission-id"],
+          transmission_time: req.headers["paypal-transmission-time"],
+          cert_url: req.headers["paypal-cert-url"],
+          auth_algo: req.headers["paypal-auth-algo"],
+          transmission_sig: req.headers["paypal-transmission-sig"],
+          webhook_id: webhookId,
+          webhook_event: event,
+        };
 
-      // Capture PayPal payment
-      const captureRes = await fetch(`${apiUrl}/v2/checkout/orders/${orderId}/capture`, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-      });
-
-      if (!captureRes.ok) {
-        const errText = await captureRes.text();
-        throw new Error(`PayPal Capture Order API failed: ${errText}`);
-      }
-
-      const captureData = await captureRes.json();
-      if (captureData.status === "COMPLETED") {
-        const captureId = captureData.purchase_units?.[0]?.payments?.captures?.[0]?.id || orderId;
-        console.log(`[PayPal] Order capture successful! Transaction ID: ${captureId}`);
-        return res.json({
-          success: true,
-          gateway: "PayPal",
-          transactionId: captureId,
-          status: captureData.status,
+        const verifyRes = await fetch(`${apiUrl}/v1/notifications/verify-webhook-signature`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
         });
-      } else {
-        return res.status(400).json({
-          error: `PayPal order capture status was not completed: ${captureData.status}`,
-        });
+
+        if (verifyRes.ok) {
+          const verifyData = await verifyRes.json();
+          if (verifyData.verification_status !== "SUCCESS") {
+            console.warn("[PayPal Webhook] Signature verification FAILED.");
+            return res.status(400).send("Signature verification failed.");
+          }
+        } else {
+          console.error("[PayPal Webhook] Verification request failed.");
+        }
       }
     } else {
-      console.log(`[PayPal] Simulator capture successful for order ${orderId}`);
-      const mockTxId = `pay_pp_sim_${Math.random().toString(36).substring(2, 10)}`;
+      console.info("[PayPal Webhook] Running in sandbox mode (missing verification keys).");
+    }
+
+    const eventType = event.event_type;
+    console.log(`[PayPal Webhook] Event Verified & Processing: ${eventType}`);
+
+    const resource = event.resource;
+    const subscriptionId = resource.billing_agreement_id || resource.id;
+
+    const customId = resource.custom_id || resource.custom || "";
+    let userId = "";
+    let planId = "monthly";
+
+    if (customId && customId.includes(":")) {
+      [userId, planId] = customId.split(":");
+    }
+
+    if (eventType === "BILLING.SUBSCRIPTION.ACTIVATED" || eventType === "PAYMENT.SALE.COMPLETED") {
+      if (userId) {
+        await activateProSubscription(
+          userId,
+          planId,
+          "PayPal",
+          subscriptionId,
+          "Other"
+        );
+        console.log(`[PayPal Webhook] Subscription activated / payment captured: ${userId}`);
+      }
+    } else if (
+      eventType === "BILLING.SUBSCRIPTION.CANCELLED" ||
+      eventType === "BILLING.SUBSCRIPTION.SUSPENDED" ||
+      eventType === "BILLING.SUBSCRIPTION.EXPIRED"
+    ) {
+      if (userId) {
+        const statusMap: any = {
+          "BILLING.SUBSCRIPTION.CANCELLED": "cancelled",
+          "BILLING.SUBSCRIPTION.SUSPENDED": "suspended",
+          "BILLING.SUBSCRIPTION.EXPIRED": "expired"
+        };
+        await cancelOrExpireProSubscription(
+          userId,
+          "PayPal",
+          statusMap[eventType],
+          subscriptionId
+        );
+        console.log(`[PayPal Webhook] Subscription state ${eventType} parsed for user: ${userId}`);
+      }
+    }
+
+    return res.json({ status: "ok" });
+  } catch (err: any) {
+    console.error("PayPal Webhook Error:", err);
+    return res.status(500).send("Webhook handling failed.");
+  }
+});
+
+// Legacy Orders Fallback routes for Paypal to preserve backwards-compatibility (if any clients hit them)
+app.post("/api/paypal/create-order", authenticateFirebaseUser, async (req: any, res) => {
+  try {
+    const { planName } = req.body;
+    const freelancerId = req.userId;
+    if (!freelancerId || !planName) {
+      return res.status(400).json({ error: "Missing parameters" });
+    }
+    const isQuarterly = planName === "3 Months" || planName === "quarterly";
+    const amount = isQuarterly ? "11.99" : "4.99";
+
+    const clientId = process.env.VITE_PAYPAL_CLIENT_ID || process.env.PAYPAL_CLIENT_ID;
+    const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
+    const apiUrl = process.env.PAYPAL_API_URL || "https://api-m.sandbox.paypal.com";
+
+    if (!clientId || !clientSecret) {
+      return res.status(400).json({ error: "PayPal credentials not configured on the server." });
+    }
+
+    const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
+    const tokenRes = await fetch(`${apiUrl}/v1/oauth2/token`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Basic ${basicAuth}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: "grant_type=client_credentials",
+    });
+
+    const tokenData = await tokenRes.json();
+    const accessToken = tokenData.access_token;
+
+    const orderRes = await fetch(`${apiUrl}/v2/checkout/orders`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        intent: "CAPTURE",
+        purchase_units: [
+          {
+            amount: {
+              currency_code: "USD",
+              value: amount,
+            },
+            description: `Freelancer CRM Pro Plan - ${planName} Access`,
+            custom_id: `${freelancerId}:${isQuarterly ? "quarterly" : "monthly"}`,
+          },
+        ],
+      }),
+    });
+
+    const orderData = await orderRes.json();
+    return res.json({
+      success: true,
+      orderId: orderData.id,
+      status: orderData.status,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/paypal/capture-order", authenticateFirebaseUser, async (req: any, res) => {
+  try {
+    const { orderId, planName } = req.body;
+    const freelancerId = req.userId;
+    if (!freelancerId || !orderId) {
+      return res.status(400).json({ error: "Missing parameters" });
+    }
+
+    const clientId = process.env.VITE_PAYPAL_CLIENT_ID || process.env.PAYPAL_CLIENT_ID;
+    const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
+    const apiUrl = process.env.PAYPAL_API_URL || "https://api-m.sandbox.paypal.com";
+
+    const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
+    const tokenRes = await fetch(`${apiUrl}/v1/oauth2/token`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Basic ${basicAuth}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: "grant_type=client_credentials",
+    });
+
+    const tokenData = await tokenRes.json();
+    const accessToken = tokenData.access_token;
+
+    const captureRes = await fetch(`${apiUrl}/v2/checkout/orders/${orderId}/capture`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    const captureData = await captureRes.json();
+    if (captureData.status === "COMPLETED") {
+      const captureId = captureData.purchase_units?.[0]?.payments?.captures?.[0]?.id || orderId;
+      const updatedProfile = await activateProSubscription(
+        freelancerId,
+        planName || "Monthly",
+        "PayPal",
+        captureId,
+        "Other"
+      );
       return res.json({
         success: true,
         gateway: "PayPal",
-        transactionId: mockTxId,
-        status: "COMPLETED",
-        isSimulated: true,
+        transactionId: captureId,
+        profile: updatedProfile,
       });
+    } else {
+      return res.status(400).json({ error: "PayPal order was not completed." });
     }
   } catch (err: any) {
-    console.error("PayPal Capture Error:", err);
-    res.status(500).json({ error: err.message || "Failed to capture PayPal order" });
+    res.status(500).json({ error: err.message });
   }
 });
 

@@ -1,5 +1,6 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
+import { getAuth } from "firebase/auth";
 
 const firebaseConfig = {
   projectId: "gen-lang-client-0198820455",
@@ -17,3 +18,6 @@ const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
 // Initialize Firestore targeting the custom databaseId
 export const db = getFirestore(app, databaseId);
+
+// Export Firebase Auth
+export const auth = getAuth(app);

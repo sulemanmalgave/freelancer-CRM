@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { FreelancerProfile } from "../types";
 import { detectLocale } from "../utils";
-import { db } from "../firebase";
+import { db, auth } from "../firebase";
 import { doc, setDoc, getDoc } from "firebase/firestore";
 
 interface UpgradeModalProps {
@@ -44,12 +44,20 @@ export default function UpgradeModal({
   const [purchaseStage, setPurchaseStage] = useState<"plans" | "processing" | "success" | "failed">("plans");
   const [selectedPlan, setSelectedPlan] = useState<"Monthly" | "3 Months">("Monthly");
   
+  // Manual Country Selection
+  const { country } = detectLocale();
+  const [selectedCountry, setSelectedCountry] = useState<string>(
+    profile?.billingCountry || profile?.country || country || "US"
+  );
+
   // Dynamic settings fetched from backend secure config endpoint
   const [paymentConfig, setPaymentConfig] = useState<{
     razorpayKeyId: string;
     paypalClientId: string;
     razorpayConfigured: boolean;
     paypalConfigured: boolean;
+    paypalPlanMonthly: string;
+    paypalPlanQuarterly: string;
   } | null>(null);
 
   const [isLoadingConfig, setIsLoadingConfig] = useState(false);
@@ -64,24 +72,23 @@ export default function UpgradeModal({
   const [actionError, setActionError] = useState("");
   const [actionSuccess, setActionSuccess] = useState("");
 
-  const { country, currency } = detectLocale();
-  const isIndia = profile?.country === "IN" || country === "IN";
+  const isIndia = selectedCountry === "IN";
 
-  // Calculate pricing based on region & selection
+  // Calculate pricing based on manual region & selection
   const planDetails = {
     "Monthly": {
-      amount: isIndia ? 99 : 2.99,
+      amount: isIndia ? 199 : 4.99,
       currencySymbol: isIndia ? "₹" : "$",
       currencyCode: isIndia ? "INR" : "USD",
       label: "Monthly Pro Access",
       savingLabel: null,
     },
     "3 Months": {
-      amount: isIndia ? 249 : 7.99,
+      amount: isIndia ? 399 : 11.99,
       currencySymbol: isIndia ? "₹" : "$",
       currencyCode: isIndia ? "INR" : "USD",
       label: "3 Months Pro Saver",
-      savingLabel: isIndia ? "Save ~16% compared to monthly" : "Save ~10% compared to monthly",
+      savingLabel: isIndia ? "Save 33% compared to monthly" : "Save 20% compared to monthly",
     }
   };
 
@@ -101,6 +108,32 @@ export default function UpgradeModal({
       setActionSuccess("");
     }
   }, [isOpen]);
+
+  // Helper to fetch authorization header securely
+  const getAuthHeader = async () => {
+    try {
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        const idToken = await currentUser.getIdToken(true);
+        return { "Authorization": `Bearer ${idToken}` };
+      }
+    } catch (e) {
+      console.warn("Failed to retrieve Firebase ID token:", e);
+    }
+    return {};
+  };
+
+  // Save manual country change to cloud and sync state
+  const handleCountryChange = async (newCountry: string) => {
+    setSelectedCountry(newCountry);
+    try {
+      const pDoc = doc(db, "freelancers", profile.id);
+      await setDoc(pDoc, { billingCountry: newCountry, country: newCountry }, { merge: true });
+      console.log(`Saved manual billingCountry "${newCountry}" to Firestore profile.`);
+    } catch (e) {
+      console.error("Failed to save manual billingCountry to profile:", e);
+    }
+  };
 
   // Fetch Payment configuration and load SDK scripts dynamically
   useEffect(() => {
@@ -126,7 +159,7 @@ export default function UpgradeModal({
             }
           }
 
-          // 2. Dynamic Script Loading for PayPal (International)
+          // 2. Dynamic Script Loading for PayPal Subscriptions (International)
           if (!isIndia) {
             const oldScript = document.getElementById("paypal-sdk-script");
             if (oldScript) {
@@ -135,10 +168,11 @@ export default function UpgradeModal({
 
             const ppScript = document.createElement("script");
             ppScript.id = "paypal-sdk-script";
-            ppScript.src = `https://www.paypal.com/sdk/js?client-id=${data.paypalClientId}&currency=USD&intent=capture`;
+            // Important: Use vault=true and intent=subscription for Subscriptions SDK routing
+            ppScript.src = `https://www.paypal.com/sdk/js?client-id=${data.paypalClientId}&vault=true&intent=subscription`;
             ppScript.async = true;
             ppScript.onload = () => setPaypalLoaded(true);
-            ppScript.onerror = () => console.error("Failed to load PayPal SDK");
+            ppScript.onerror = () => console.error("Failed to load PayPal Subscriptions SDK");
             document.body.appendChild(ppScript);
           }
         })
@@ -149,7 +183,7 @@ export default function UpgradeModal({
     }
   }, [isOpen, isIndia]);
 
-  // Handle dynamic PayPal Buttons mounting
+  // Handle dynamic PayPal Subscriptions Buttons mounting
   useEffect(() => {
     if (paypalLoaded && purchaseStage === "plans" && !isIndia && paymentConfig) {
       const container = document.getElementById("paypal-button-container");
@@ -162,110 +196,90 @@ export default function UpgradeModal({
               layout: "vertical",
               color: "gold",
               shape: "rect",
-              label: "paypal"
+              label: "subscribe"
             },
-            createOrder: async () => {
+            createSubscription: (data: any, actions: any) => {
               setPaymentError("");
-              const res = await fetch("/api/paypal/create-order", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  freelancerId: profile.id,
-                  planName: selectedPlan,
-                  amount: currentPlanInfo.amount,
-                }),
+              const targetPlanId = selectedPlan === "3 Months" 
+                ? paymentConfig.paypalPlanQuarterly 
+                : paymentConfig.paypalPlanMonthly;
+              
+              console.log(`[PayPal] Initiating subscription for plan: ${targetPlanId}`);
+              return actions.subscription.create({
+                plan_id: targetPlanId,
+                custom_id: `${profile.id}:${selectedPlan === "3 Months" ? "quarterly" : "monthly"}`
               });
-              const orderData = await res.json();
-              if (orderData.orderId) {
-                return orderData.orderId;
-              } else {
-                throw new Error(orderData.error || "Failed to create PayPal order.");
-              }
             },
             onApprove: async (data: any) => {
               setPurchaseStage("processing");
               setLogs([
-                `[PayPal] Payment Approved (Order ID: ${data.orderID})`,
-                "[PayPal] Contacting backend for secure transaction capture..."
+                `[PayPal] Subscription Approved! ID: ${data.subscriptionID}`,
+                "[PayPal] Contacting backend to verify billing agreement state..."
               ]);
               
               try {
-                const res = await fetch("/api/paypal/capture-order", {
+                const authHeader = await getAuthHeader();
+                const res = await fetch("/api/paypal/verify-subscription", {
                   method: "POST",
-                  headers: { "Content-Type": "application/json" },
+                  headers: { 
+                    "Content-Type": "application/json",
+                    ...authHeader
+                  },
                   body: JSON.stringify({
+                    planId: selectedPlan === "3 Months" ? "quarterly" : "monthly",
+                    subscriptionId: data.subscriptionID,
                     freelancerId: profile.id,
-                    planName: selectedPlan,
-                    orderId: data.orderID,
                   }),
                 });
                 
-                const captureResult = await res.json();
-                if (captureResult.success) {
-                  setLogs((prev) => [...prev, "[PayPal] Transaction captured successfully! Syncing subscription..."]);
+                const verifyResult = await res.json();
+                if (verifyResult.success) {
+                  setLogs((prev) => [...prev, "[PayPal] Subscription verified cryptographically! Provisioning active entitlements..."]);
                   
-                  // Compute expiry date
-                  const durationInDays = selectedPlan === "Monthly" ? 30 : 90;
-                  const expiryDate = new Date();
-                  expiryDate.setDate(expiryDate.getDate() + durationInDays);
-
-                  const subData = {
-                    premium: true,
-                    plan: selectedPlan, // "Monthly" or "3 Months"
-                    paymentGateway: "PayPal",
-                    purchaseDate: new Date().toISOString(),
-                    expiryDate: expiryDate.toISOString(),
-                    transactionId: captureResult.transactionId,
-                    subscriptionStatus: "active" as const,
-                    subscriptionRegion: "Other",
-                    subscriptionMethod: "PayPal",
-                    subscriptionRenewsAt: expiryDate.toISOString(),
-                  };
-
-                  const pDoc = doc(db, "freelancers", profile.id);
-                  await setDoc(pDoc, { ...profile, ...subData }, { merge: true });
-
-                  onUpgradeSuccess("Pro" as any, subData);
+                  onUpgradeSuccess("Pro" as any, verifyResult.profile);
                   setPurchaseStage("success");
                 } else {
-                  throw new Error(captureResult.error || "Capture was unsuccessful.");
+                  throw new Error(verifyResult.error || "Subscription activation verification rejected.");
                 }
               } catch (err: any) {
-                console.error("PayPal Capture Error:", err);
-                setPaymentError(err.message || "Failed to capture payment securely.");
+                console.error("PayPal Subscription verification Error:", err);
+                setPaymentError(err.message || "Failed to verify PayPal subscription.");
                 setPurchaseStage("failed");
               }
             },
             onError: (err: any) => {
-              console.error("PayPal Button Render Error:", err);
-              setPaymentError("PayPal checkout process cancelled or encountered an error.");
+              console.error("PayPal Subscription error:", err);
+              setPaymentError("PayPal Subscription process was cancelled or refused by issuing network.");
               setPurchaseStage("failed");
             }
           }).render("#paypal-button-container");
         } catch (e) {
-          console.error("PayPal buttons mounting error:", e);
+          console.error("PayPal subscription buttons rendering error:", e);
         }
       }
     }
-  }, [paypalLoaded, purchaseStage, isIndia, selectedPlan, paymentConfig, currentPlanInfo]);
+  }, [paypalLoaded, purchaseStage, isIndia, selectedPlan, paymentConfig]);
 
   // Handle Razorpay Checkout Flow
   const handleRazorpayCheckout = async () => {
     setPaymentError("");
     setPurchaseStage("processing");
     setLogs([
-      "[Razorpay] Communicating with billing engine...",
-      "[Razorpay] Registering order parameters on secure merchant server..."
+      "[Razorpay] Communicating with secure billing engine...",
+      "[Razorpay] Registering order parameters on merchant backend..."
     ]);
 
     try {
+      const authHeader = await getAuthHeader();
       const orderRes = await fetch("/api/razorpay/create-order", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          ...authHeader
+        },
         body: JSON.stringify({
           freelancerId: profile.id,
           planName: selectedPlan,
-          amount: currentPlanInfo.amount,
         }),
       });
 
@@ -277,12 +291,12 @@ export default function UpgradeModal({
       setLogs((prev) => [
         ...prev,
         `[Razorpay] Created order securely: ${orderData.orderId}`,
-        "[Razorpay] Launching client payment panel overlays..."
+        "[Razorpay] Launching native payment gateway panel overlay..."
       ]);
 
       const keyId = paymentConfig?.razorpayKeyId || "";
       if (!keyId) {
-        throw new Error("Razorpay Live Key ID is not configured. Please set it in your Settings or server environment variables.");
+        throw new Error("Razorpay Key ID is not configured. Please verify your workspace settings.");
       }
 
       const options = {
@@ -295,14 +309,18 @@ export default function UpgradeModal({
         handler: async function (response: any) {
           setLogs((prev) => [
             ...prev,
-            "[Razorpay] Authorized! Received secure signature keys.",
-            "[Razorpay] Transmitting tokens to verification backend..."
+            "[Razorpay] Authorized! Received secure transaction signature.",
+            "[Razorpay] Transmitting signature token to verification server..."
           ]);
 
           try {
+            const verificationAuthHeader = await getAuthHeader();
             const verifyRes = await fetch("/api/razorpay/verify-payment", {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: { 
+                "Content-Type": "application/json",
+                ...verificationAuthHeader
+              },
               body: JSON.stringify({
                 freelancerId: profile.id,
                 planName: selectedPlan,
@@ -314,36 +332,16 @@ export default function UpgradeModal({
 
             const verifyResult = await verifyRes.json();
             if (verifyResult.success) {
-              setLogs((prev) => [...prev, "[Razorpay] Signature verified! Allocating cloud entitlements..."]);
+              setLogs((prev) => [...prev, "[Razorpay] Signature validated successfully! Synced entitlements."]);
               
-              const durationInDays = selectedPlan === "Monthly" ? 30 : 90;
-              const expiryDate = new Date();
-              expiryDate.setDate(expiryDate.getDate() + durationInDays);
-
-              const subData = {
-                premium: true,
-                plan: selectedPlan, // "Monthly" or "3 Months"
-                paymentGateway: "Razorpay",
-                purchaseDate: new Date().toISOString(),
-                expiryDate: expiryDate.toISOString(),
-                transactionId: verifyResult.transactionId,
-                subscriptionStatus: "active" as const,
-                subscriptionRegion: "IN",
-                subscriptionMethod: "Razorpay",
-                subscriptionRenewsAt: expiryDate.toISOString(),
-              };
-
-              const pDoc = doc(db, "freelancers", profile.id);
-              await setDoc(pDoc, { ...profile, ...subData }, { merge: true });
-
-              onUpgradeSuccess("Pro" as any, subData);
+              onUpgradeSuccess("Pro" as any, verifyResult.profile);
               setPurchaseStage("success");
             } else {
               throw new Error(verifyResult.error || "Signature validation refused by gateway server.");
             }
           } catch (verErr: any) {
-            console.error("Razorpay Signature Error:", verErr);
-            setPaymentError(verErr.message || "Failed to verify transaction signature.");
+            console.error("Razorpay Signature Verification Error:", verErr);
+            setPaymentError(verErr.message || "Failed to verify transaction signature securely.");
             setPurchaseStage("failed");
           }
         },
@@ -372,48 +370,6 @@ export default function UpgradeModal({
     } catch (err: any) {
       console.error("Razorpay Checkout Launch Error:", err);
       setPaymentError(err.message || "Failed to open Razorpay checkout window.");
-      setPurchaseStage("failed");
-    }
-  };
-
-  // Simulated Instant checkout button when keys are missing on PayPal as well
-  const handleSimulatedPay = async () => {
-    setPaymentError("");
-    setPurchaseStage("processing");
-    setLogs([
-      "[Simulator] Booting sandbox authorization gateway...",
-      `[Simulator] Processing payment of ${formattedPrice} for Plan: ${selectedPlan}...`
-    ]);
-
-    try {
-      await new Promise((r) => setTimeout(r, 1200));
-      setLogs((prev) => [...prev, "[Simulator] Authorized successfully! Updating billing registry..."]);
-
-      const durationInDays = selectedPlan === "Monthly" ? 30 : 90;
-      const expiryDate = new Date();
-      expiryDate.setDate(expiryDate.getDate() + durationInDays);
-
-      const subData = {
-        premium: true,
-        plan: selectedPlan, // "Monthly" or "3 Months"
-        paymentGateway: isIndia ? "Razorpay" : "PayPal",
-        purchaseDate: new Date().toISOString(),
-        expiryDate: expiryDate.toISOString(),
-        transactionId: `tx_sandbox_${Math.random().toString(36).substring(2, 12).toUpperCase()}`,
-        subscriptionStatus: "active" as const,
-        subscriptionRegion: isIndia ? "IN" : "Other",
-        subscriptionMethod: isIndia ? "Razorpay (Simulated)" : "PayPal (Simulated)",
-        subscriptionRenewsAt: expiryDate.toISOString(),
-      };
-
-      const pDoc = doc(db, "freelancers", profile.id);
-      await setDoc(pDoc, { ...profile, ...subData }, { merge: true });
-
-      onUpgradeSuccess("Pro" as any, subData);
-      setPurchaseStage("success");
-    } catch (err: any) {
-      console.error("Simulation error:", err);
-      setPaymentError("Simulated payment failed.");
       setPurchaseStage("failed");
     }
   };
@@ -460,33 +416,15 @@ export default function UpgradeModal({
 
       if (pSnap.exists()) {
         const stored = pSnap.data() as FreelancerProfile;
-        if (stored.premium === true || stored.plan !== "Free") {
+        if (stored.premium === true || (stored.plan && stored.plan !== "Free")) {
           onUpgradeSuccess("Pro" as any, stored);
           setActionSuccess("Restored active subscription state from your cloud profile successfully!");
           return;
         }
       }
 
-      await new Promise((r) => setTimeout(r, 1200));
-      const expiryDate = new Date();
-      expiryDate.setDate(expiryDate.getDate() + 30);
-
-      const subData = {
-        premium: true,
-        plan: "Monthly",
-        paymentGateway: isIndia ? "Razorpay" : "PayPal",
-        purchaseDate: new Date().toISOString(),
-        expiryDate: expiryDate.toISOString(),
-        transactionId: "tx_restored_temp123",
-        subscriptionStatus: "active" as const,
-        subscriptionRegion: isIndia ? "IN" : "Other",
-        subscriptionMethod: isIndia ? "Razorpay" : "PayPal",
-        subscriptionRenewsAt: expiryDate.toISOString(),
-      };
-
-      await setDoc(pDoc, { ...profile, ...subData }, { merge: true });
-      onUpgradeSuccess("Pro" as any, subData);
-      setActionSuccess("Subscription restored successfully! Verified past receipt token on your cloud account.");
+      await new Promise((r) => setTimeout(r, 1000));
+      setActionError("No active subscription entitlements were found for this account on the server.");
     } catch (err) {
       setActionError("Unable to locate valid billing parameters on your account.");
     } finally {
@@ -693,11 +631,34 @@ export default function UpgradeModal({
               ) : (
                 /* IF REGISTERED AS FREE */
                 <div className="space-y-4">
-                  {/* Localized Price Banner Selector */}
+                  {/* Localized Price Banner Selector with Interactive Selector */}
                   <div className="space-y-3">
-                    <div className="flex items-center gap-1.5 justify-center text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-100 py-1.5 rounded-lg">
-                      <Globe size={11} className="text-indigo-500" />
-                      <span>Country Autodetected: {isIndia ? "India (₹ INR Plan)" : "International (USD Plan)"}</span>
+                    <div className="bg-slate-100 p-3 rounded-xl space-y-2">
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                          <Globe size={11} className="text-indigo-600 animate-spin" />
+                          <span>Select Billing Country / Region (Manual Override)</span>
+                        </label>
+                        <select
+                          value={selectedCountry}
+                          onChange={(e) => handleCountryChange(e.target.value)}
+                          className="w-full text-xs font-bold text-slate-700 bg-white border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all cursor-pointer"
+                        >
+                          <option value="IN">🇮🇳 India (₹ INR Plan - Razorpay)</option>
+                          <option value="US">🇺🇸 United States ($ USD Plan - PayPal)</option>
+                          <option value="GB">🇬🇧 United Kingdom ($ USD Plan - PayPal)</option>
+                          <option value="CA">🇨🇦 Canada ($ USD Plan - PayPal)</option>
+                          <option value="AU">🇦🇺 Australia ($ USD Plan - PayPal)</option>
+                          <option value="DE">🇩🇪 Germany ($ USD Plan - PayPal)</option>
+                          <option value="FR">🇫🇷 France ($ USD Plan - PayPal)</option>
+                          <option value="SG">🇸🇬 Singapore ($ USD Plan - PayPal)</option>
+                          <option value="AE">🇦🇪 United Arab Emirates ($ USD Plan - PayPal)</option>
+                          <option value="JP">🇯🇵 Japan ($ USD Plan - PayPal)</option>
+                        </select>
+                      </div>
+                      <div className="text-[9px] text-slate-400 font-bold text-center">
+                        Billing region dictates payment router & pricing currency code.
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2">
@@ -713,7 +674,7 @@ export default function UpgradeModal({
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Monthly Plan</span>
                         <div className="flex items-baseline gap-0.5">
                           <strong className="text-xl font-black text-slate-900">
-                            {isIndia ? "₹99" : "$2.99"}
+                            {isIndia ? "₹199" : "$4.99"}
                           </strong>
                           <span className="text-[10px] text-slate-400">/mo</span>
                         </div>
@@ -733,12 +694,12 @@ export default function UpgradeModal({
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">3 Months</span>
                         <div className="flex items-baseline gap-0.5">
                           <strong className="text-xl font-black text-slate-900">
-                            {isIndia ? "₹249" : "$7.99"}
+                            {isIndia ? "₹399" : "$11.99"}
                           </strong>
                           <span className="text-[10px] text-slate-400">/total</span>
                         </div>
                         <span className="text-[8px] text-emerald-600 font-extrabold mt-1">
-                          {isIndia ? "Save 16% (~₹83/mo)" : "Save 10% (~$2.66/mo)"}
+                          {isIndia ? "Save 33% (~₹133/mo)" : "Save 20% (~$3.99/mo)"}
                         </span>
                       </button>
                     </div>
@@ -814,16 +775,16 @@ export default function UpgradeModal({
                       <div className="space-y-3">
                         {/* Dev Sandbox simulation warning if credentials aren't loaded */}
                         {!isConfigured && (
-                          <div className={`p-3 border rounded-xl text-[10px] leading-normal font-semibold flex items-start gap-1.5 ${isIndia ? "bg-rose-500/10 border-rose-500/20 text-rose-900" : "bg-amber-500/10 border-amber-500/20 text-amber-800"}`}>
-                            <AlertTriangle size={14} className={isIndia ? "text-rose-600 shrink-0 mt-0.5" : "text-amber-600 shrink-0 mt-0.5"} />
+                          <div className="p-3 border border-rose-500/20 bg-rose-500/10 text-rose-950 rounded-xl text-[10px] leading-normal font-semibold flex items-start gap-1.5">
+                            <AlertTriangle size={14} className="text-rose-600 shrink-0 mt-0.5" />
                             <div>
                               {isIndia ? (
                                 <>
-                                  <strong>Gateway Key Required:</strong> Your custom Razorpay credentials are not configured. Please provide your Key ID and Secret in the <strong>Settings</strong> tab under <strong>Razorpay Integration Credentials</strong>, or define them on the server to activate the live checkout.
+                                  <strong>Gateway Key Required:</strong> Your server-side Razorpay credentials are not configured. Please define <code>RAZORPAY_KEY_ID</code> and <code>RAZORPAY_KEY_SECRET</code> in your environment variables to activate the checkout.
                                 </>
                               ) : (
                                 <>
-                                  <strong>Developer Sandbox Notice:</strong> Credentials not configured in .env. Falling back to secure simulated sandboxes for instant local preview testing.
+                                  <strong>Gateway Key Required:</strong> Your server-side PayPal credentials are not configured. Please define <code>PAYPAL_CLIENT_ID</code> and <code>PAYPAL_CLIENT_SECRET</code> in your environment variables to activate the checkout.
                                 </>
                               )}
                             </div>
@@ -836,7 +797,8 @@ export default function UpgradeModal({
                             <button
                               type="button"
                               onClick={handleRazorpayCheckout}
-                              className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-extrabold shadow-lg shadow-indigo-600/15 flex items-center justify-center gap-2 cursor-pointer transition-all hover:scale-[1.01]"
+                              disabled={!isConfigured}
+                              className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none disabled:cursor-not-allowed text-white rounded-xl text-xs font-extrabold shadow-lg shadow-indigo-600/15 flex items-center justify-center gap-2 cursor-pointer transition-all hover:scale-[1.01]"
                             >
                               <Smartphone size={14} />
                               <span>Pay {formattedPrice} with Razorpay (UPI / Card)</span>
@@ -855,14 +817,13 @@ export default function UpgradeModal({
                                 {/* PayPal Script injects Buttons container here */}
                               </div>
                             ) : (
-                              <button
-                                type="button"
-                                onClick={handleSimulatedPay}
-                                className="w-full py-3 bg-amber-500 hover:bg-amber-600 text-amber-950 rounded-xl text-xs font-extrabold shadow-lg shadow-amber-500/10 flex items-center justify-center gap-2 cursor-pointer transition-all hover:scale-[1.01]"
-                              >
-                                <Wallet size={14} />
-                                <span>Simulate PayPal Checkout ({formattedPrice})</span>
-                              </button>
+                              <div className="p-4 bg-slate-50 border border-slate-200 text-slate-600 rounded-xl text-center text-xs space-y-2">
+                                <Wallet size={18} className="mx-auto text-slate-400" />
+                                <p className="font-semibold text-slate-700">PayPal Gateway Unconfigured</p>
+                                <p className="text-[10px] text-slate-400 leading-normal">
+                                  Your PayPal client ID is missing. Please define <code>PAYPAL_CLIENT_ID</code> and <code>PAYPAL_CLIENT_SECRET</code> in the server environment variables to initiate PayPal Checkout.
+                                </p>
+                              </div>
                             )}
                             <p className="text-[9px] text-slate-400 text-center leading-relaxed">
                               Pay securely via credit card, debit card, or international PayPal wallets. Verified by PayPal Merchant services.

@@ -4,6 +4,7 @@ export interface FreelancerProfile {
   businessName: string;
   currency: string;
   country: string;
+  billingCountry?: string;
   plan: "Free" | "Pro" | "Monthly" | "3 Months" | string;
   onboardingCompleted: boolean;
   createdAt: string;

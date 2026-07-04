@@ -15,8 +15,48 @@ service cloud.firestore {
     // Freelancer profiles
     match /freelancers/{freelancerId} {
       allow get: if isValidId(freelancerId);
-      allow create, update: if isValidId(freelancerId) && request.resource.data.id == freelancerId;
+      
+      allow create: if isValidId(freelancerId) 
+        && request.resource.data.id == freelancerId
+        && (!('plan' in request.resource.data) || request.resource.data.plan == 'Free' || request.resource.data.plan == 'free')
+        && !('proUntil' in request.resource.data)
+        && (!('premium' in request.resource.data) || request.resource.data.premium == false)
+        && !('paymentGateway' in request.resource.data)
+        && !('subscriptionStatus' in request.resource.data);
+        
+      allow update: if isValidId(freelancerId) 
+        && request.resource.data.id == freelancerId
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny([
+              'plan', 'proUntil', 'paymentProvider', 'subscriptionStatus', 
+              'premium', 'paymentGateway', 'subscriptionMethod', 
+              'subscriptionRenewsAt', 'purchaseDate', 'expiryDate', 'transactionId'
+            ]));
+            
       allow delete: if isValidId(freelancerId);
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow get: if isValidId(userId);
+      
+      allow create: if isValidId(userId)
+        && (!('plan' in request.resource.data) || request.resource.data.plan == 'free')
+        && !('proUntil' in request.resource.data)
+        && !('paymentProvider' in request.resource.data)
+        && !('subscriptionStatus' in request.resource.data);
+        
+      allow update: if isValidId(userId)
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny([
+              'plan', 'proUntil', 'paymentProvider', 'subscriptionStatus'
+            ]));
+            
+      allow delete: if false;
+    }
+
+    // Payments collection
+    match /payments/{paymentId} {
+      allow read: if true;
+      allow write: if false; // strictly prevent any direct user/client writes
     }
 
     // Clients collection
