@@ -20,6 +20,12 @@ export interface FreelancerProfile {
   razorpayKeySecret?: string;
 }
 
+export interface ImportantLink {
+  id: string;
+  name: string;
+  url: string;
+}
+
 export interface Client {
   id: string;
   freelancerId: string;
@@ -30,6 +36,7 @@ export interface Client {
   notes: string;
   status: "Lead" | "Active" | "Inactive";
   createdAt: string;
+  importantLinks?: ImportantLink[];
 }
 
 export interface Project {

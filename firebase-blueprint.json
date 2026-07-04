@@ -33,7 +33,19 @@
         "phone": { "type": "string" },
         "notes": { "type": "string" },
         "status": { "type": "string" },
-        "createdAt": { "type": "string" }
+        "createdAt": { "type": "string" },
+        "importantLinks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "url": { "type": "string" }
+            },
+            "required": ["id", "name", "url"]
+          }
+        }
       },
       "required": ["id", "freelancerId", "companyName", "contactPerson", "status", "createdAt"]
     },
