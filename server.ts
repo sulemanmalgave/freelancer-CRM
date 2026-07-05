@@ -1,14 +1,9 @@
 import express from "express";
 import path from "path";
-import { fileURLToPath } from "url";
 import "dotenv/config";
 import Stripe from "stripe";
 import { createServer as createViteServer } from "vite";
 import crypto from "crypto";
-
-// Handle ESM globals
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = 3000;
@@ -356,10 +351,10 @@ app.get("/api/stripe/verify-session", async (req, res) => {
 
 // 1. Fetch public payment config (Secrets are safe on backend, client IDs exposed securely)
 app.get("/api/payment/config", (req, res) => {
-  const finalRazorpayKeyId = process.env.VITE_RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID || "";
+  const finalRazorpayKeyId = process.env.RAZORPAY_KEY_ID || process.env.VITE_RAZORPAY_KEY_ID || "";
   const hasRazorpayConfigured = !!finalRazorpayKeyId && !!process.env.RAZORPAY_KEY_SECRET;
 
-  const finalPaypalClientId = process.env.VITE_PAYPAL_CLIENT_ID || process.env.PAYPAL_CLIENT_ID || "";
+  const finalPaypalClientId = process.env.PAYPAL_CLIENT_ID || process.env.VITE_PAYPAL_CLIENT_ID || "";
   const hasPaypalConfigured = !!finalPaypalClientId && !!process.env.PAYPAL_CLIENT_SECRET;
 
   const paypalPlanMonthly = process.env.PAYPAL_PLAN_MONTHLY || "P-59199343B03893339MZVLUOI";
@@ -394,7 +389,7 @@ app.post("/api/razorpay/create-order", authenticateFirebaseUser, async (req: any
     }
 
     const amountInPaise = amount * 100;
-    const keyId = process.env.VITE_RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID;
+    const keyId = process.env.RAZORPAY_KEY_ID || process.env.VITE_RAZORPAY_KEY_ID;
     const keySecret = process.env.RAZORPAY_KEY_SECRET;
 
     if (!keyId || !keySecret) {
@@ -628,7 +623,7 @@ app.post("/api/paypal/webhook", async (req, res) => {
           const verifyData = await verifyRes.json();
           if (verifyData.verification_status !== "SUCCESS") {
             console.warn("[PayPal Webhook] Signature verification FAILED.");
-            return res.status(400).send("Signature verification failed.");
+            return res.status(400).json({ error: "Signature verification failed." });
           }
         } else {
           console.error("[PayPal Webhook] Verification request failed.");
@@ -687,7 +682,7 @@ app.post("/api/paypal/webhook", async (req, res) => {
     return res.json({ status: "ok" });
   } catch (err: any) {
     console.error("PayPal Webhook Error:", err);
-    return res.status(500).send("Webhook handling failed.");
+    return res.status(500).json({ error: "Webhook handling failed." });
   }
 });
 
