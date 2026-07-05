@@ -349,10 +349,22 @@ app.get("/api/stripe/verify-session", async (req, res) => {
 // Razorpay & PayPal Integrations
 // ==========================================
 
+// Lazy initialization helper for Razorpay credentials read at runtime
+function getRazorpayCredentials() {
+  const keyId = process.env.RAZORPAY_KEY_ID;
+  const keySecret = process.env.RAZORPAY_KEY_SECRET;
+
+  console.log("RAZORPAY_KEY_ID available:", Boolean(keyId));
+  console.log("RAZORPAY_KEY_SECRET available:", Boolean(keySecret));
+
+  return { keyId, keySecret };
+}
+
 // 1. Fetch public payment config (Secrets are safe on backend, client IDs exposed securely)
 app.get("/api/payment/config", (req, res) => {
-  const finalRazorpayKeyId = process.env.RAZORPAY_KEY_ID || process.env.VITE_RAZORPAY_KEY_ID || "";
-  const hasRazorpayConfigured = !!finalRazorpayKeyId && !!process.env.RAZORPAY_KEY_SECRET;
+  const { keyId, keySecret } = getRazorpayCredentials();
+  const finalRazorpayKeyId = keyId || "";
+  const hasRazorpayConfigured = !!finalRazorpayKeyId && !!keySecret;
 
   const finalPaypalClientId = process.env.PAYPAL_CLIENT_ID || process.env.VITE_PAYPAL_CLIENT_ID || "";
   const hasPaypalConfigured = !!finalPaypalClientId && !!process.env.PAYPAL_CLIENT_SECRET;
@@ -389,8 +401,7 @@ app.post("/api/razorpay/create-order", authenticateFirebaseUser, async (req: any
     }
 
     const amountInPaise = amount * 100;
-    const keyId = process.env.RAZORPAY_KEY_ID || process.env.VITE_RAZORPAY_KEY_ID;
-    const keySecret = process.env.RAZORPAY_KEY_SECRET;
+    const { keyId, keySecret } = getRazorpayCredentials();
 
     if (!keyId || !keySecret) {
       console.error("[Razorpay] Order creation failed: Credentials are not configured on the server.");
@@ -422,7 +433,16 @@ app.post("/api/razorpay/create-order", authenticateFirebaseUser, async (req: any
 
     if (!response.ok) {
       const errText = await response.text();
-      throw new Error(`Razorpay API responded with status ${response.status}: ${errText}`);
+      let errJson;
+      try {
+        errJson = JSON.parse(errText);
+      } catch (e) {
+        errJson = null;
+      }
+      return res.status(response.status).json({
+        success: false,
+        error: errJson ? (errJson.error?.description || errJson.error?.reason || errText) : errText
+      });
     }
 
     const data = await response.json();
@@ -451,7 +471,7 @@ app.post("/api/razorpay/verify-payment", authenticateFirebaseUser, async (req: a
       return res.status(400).json({ error: "Missing required fields for payment verification" });
     }
 
-    const keySecret = process.env.RAZORPAY_KEY_SECRET;
+    const { keySecret } = getRazorpayCredentials();
     if (!keySecret) {
       console.error("[Razorpay] Verification failed: Server credentials are not configured.");
       return res.status(500).json({ error: "Razorpay credentials are not configured on this server environment." });
