@@ -826,31 +826,4 @@ app.post("/api/paypal/capture-order", authenticateFirebaseUser, async (req: any,
   }
 });
 
-// Vite server integrations
-async function init() {
-  if (process.env.NODE_ENV !== "production") {
-    const { createServer: createViteServer } = await import("vite");
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
-  }
-
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
-  });
-}
-
 export default app;
-
-// Only start the standalone Express listener if NOT running inside Vercel's Serverless environment
-if (!process.env.VERCEL) {
-  init();
-}
