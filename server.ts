@@ -2,7 +2,6 @@ import express from "express";
 import path from "path";
 import "dotenv/config";
 import Stripe from "stripe";
-import { createServer as createViteServer } from "vite";
 import crypto from "crypto";
 
 const app = express();
@@ -830,6 +829,7 @@ app.post("/api/paypal/capture-order", authenticateFirebaseUser, async (req: any,
 // Vite server integrations
 async function init() {
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
