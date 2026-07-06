@@ -356,6 +356,74 @@ app.get("/api/stripe/verify-session", async (req, res) => {
   }
 });
 
+// Geolocation endpoint to detect user country securely from server side
+app.get("/api/detect-country", async (req, res) => {
+  try {
+    // 1. Try standard cloud hosting/GCLB headers first (fast, accurate)
+    const headersToCheck = [
+      "x-appengine-country",
+      "x-client-geo-country",
+      "cf-ipcountry",
+      "x-country-code"
+    ];
+    for (const h of headersToCheck) {
+      const val = req.headers[h];
+      if (val && typeof val === "string" && val.trim().length === 2) {
+        const countryCode = val.trim().toUpperCase();
+        console.log(`[GeoIP] Detected country ${countryCode} from header: ${h}`);
+        return res.json({ success: true, country: countryCode, source: "header:" + h });
+      }
+    }
+
+    // 2. Fallback: IP geolocation lookup
+    let clientIp = "";
+    const xForwardedFor = req.headers["x-forwarded-for"];
+    if (xForwardedFor && typeof xForwardedFor === "string") {
+      clientIp = xForwardedFor.split(",")[0].trim();
+    } else {
+      clientIp = req.socket.remoteAddress || "";
+    }
+
+    if (clientIp.startsWith("::ffff:")) {
+      clientIp = clientIp.substring(7);
+    }
+
+    const isLocal = !clientIp || clientIp === "127.0.0.1" || clientIp === "::1" || clientIp.startsWith("10.") || clientIp.startsWith("192.168.") || clientIp.startsWith("172.16.");
+
+    if (!isLocal) {
+      // Use ip-api.com (free, non-ssl endpoint or SSL endpoint)
+      const geoUrl = `http://ip-api.com/json/${clientIp}`;
+      const response = await fetch(geoUrl);
+      if (response.ok) {
+        const data: any = await response.json();
+        if (data && data.status === "success" && data.countryCode && data.countryCode.length === 2) {
+          const countryCode = data.countryCode.toUpperCase();
+          console.log(`[GeoIP] Detected country ${countryCode} from IP lookup of ${clientIp}`);
+          return res.json({
+            success: true,
+            country: countryCode,
+            source: "ip-api"
+          });
+        }
+      }
+    }
+
+    console.warn(`[GeoIP] Fallback to US. Client IP: ${clientIp}, Local: ${isLocal}`);
+    return res.json({
+      success: false,
+      country: "US",
+      source: "default"
+    });
+  } catch (err: any) {
+    console.error("[GeoIP] Error during country detection:", err);
+    return res.json({
+      success: false,
+      country: "US",
+      source: "error"
+    });
+  }
+});
+
 // ==========================================
 // Razorpay & PayPal Integrations
 // ==========================================

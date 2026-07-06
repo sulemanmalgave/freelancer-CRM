@@ -710,102 +710,113 @@ export default function App() {
         </div>
 
         {/* View Switch Router */}
-        <div className="flex-1">
-          {activeView === "Dashboard" && (
-            <DashboardView
-              clients={clients}
-              projects={projects}
-              invoices={invoices}
-              leads={leads}
-              currency={profile.currency}
-              onNavigate={setActiveView}
-              onQuickAdd={handleQuickAddAction}
-            />
-          )}
+        <div className="flex-1 relative">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeView}
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.18, ease: "easeOut" }}
+              className="w-full h-full"
+            >
+              {activeView === "Dashboard" && (
+                <DashboardView
+                  clients={clients}
+                  projects={projects}
+                  invoices={invoices}
+                  leads={leads}
+                  currency={profile.currency}
+                  onNavigate={setActiveView}
+                  onQuickAdd={handleQuickAddAction}
+                />
+              )}
 
-          {activeView === "Clients" && (
-            <ClientsView
-              clients={clients}
-              profile={profile}
-              searchTerm={searchTerm}
-              onAddClient={handleAddClient}
-              onUpdateClient={handleUpdateClient}
-              onDeleteClient={handleDeleteClient}
-              onTriggerUpgrade={triggerUpgrade}
-            />
-          )}
+              {activeView === "Clients" && (
+                <ClientsView
+                  clients={clients}
+                  profile={profile}
+                  searchTerm={searchTerm}
+                  onAddClient={handleAddClient}
+                  onUpdateClient={handleUpdateClient}
+                  onDeleteClient={handleDeleteClient}
+                  onTriggerUpgrade={triggerUpgrade}
+                />
+              )}
 
-          {activeView === "Projects" && (
-            <ProjectsView
-              projects={projects}
-              clients={clients}
-              profile={profile}
-              searchTerm={searchTerm}
-              onAddProject={handleAddProject}
-              onUpdateProject={handleUpdateProject}
-              onDeleteProject={handleDeleteProject}
-              onTriggerUpgrade={triggerUpgrade}
-            />
-          )}
+              {activeView === "Projects" && (
+                <ProjectsView
+                  projects={projects}
+                  clients={clients}
+                  profile={profile}
+                  searchTerm={searchTerm}
+                  onAddProject={handleAddProject}
+                  onUpdateProject={handleUpdateProject}
+                  onDeleteProject={handleDeleteProject}
+                  onTriggerUpgrade={triggerUpgrade}
+                />
+              )}
 
-          {activeView === "Tasks" && (
-            <TasksView
-              tasks={tasks}
-              projects={projects}
-              onAddTask={handleAddTask}
-              onToggleTask={handleToggleTask}
-              onDeleteTask={handleDeleteTask}
-            />
-          )}
+              {activeView === "Tasks" && (
+                <TasksView
+                  tasks={tasks}
+                  projects={projects}
+                  onAddTask={handleAddTask}
+                  onToggleTask={handleToggleTask}
+                  onDeleteTask={handleDeleteTask}
+                />
+              )}
 
-          {activeView === "Invoices" && (
-            <InvoicesView
-              invoices={invoices}
-              clients={clients}
-              profile={profile}
-              searchTerm={searchTerm}
-              onAddInvoice={handleAddInvoice}
-              onUpdateInvoice={handleUpdateInvoice}
-              onDeleteInvoice={handleDeleteInvoice}
-              onTriggerUpgrade={triggerUpgrade}
-            />
-          )}
+              {activeView === "Invoices" && (
+                <InvoicesView
+                  invoices={invoices}
+                  clients={clients}
+                  profile={profile}
+                  searchTerm={searchTerm}
+                  onAddInvoice={handleAddInvoice}
+                  onUpdateInvoice={handleUpdateInvoice}
+                  onDeleteInvoice={handleDeleteInvoice}
+                  onTriggerUpgrade={triggerUpgrade}
+                />
+              )}
 
-          {activeView === "Leads" && (
-            <LeadsView
-              leads={leads}
-              currency={profile.currency}
-              searchTerm={searchTerm}
-              onAddLead={handleAddLead}
-              onUpdateLead={handleUpdateLead}
-              onDeleteLead={handleDeleteLead}
-              onConvertToClient={handleConvertToClient}
-            />
-          )}
+              {activeView === "Leads" && (
+                <LeadsView
+                  leads={leads}
+                  currency={profile.currency}
+                  searchTerm={searchTerm}
+                  onAddLead={handleAddLead}
+                  onUpdateLead={handleUpdateLead}
+                  onDeleteLead={handleDeleteLead}
+                  onConvertToClient={handleConvertToClient}
+                />
+              )}
 
-          {activeView === "Revenue" && (
-            <RevenueView invoices={invoices} profile={profile} onTriggerUpgrade={triggerUpgrade} />
-          )}
+              {activeView === "Revenue" && (
+                <RevenueView invoices={invoices} profile={profile} onTriggerUpgrade={triggerUpgrade} />
+              )}
 
-          {activeView === "Documents" && (
-            <DocumentsView
-              documents={documents}
-              profile={profile}
-              onAddDocument={handleAddDocument}
-              onDeleteDocument={handleDeleteDocument}
-              onTriggerUpgrade={triggerUpgrade}
-            />
-          )}
+              {activeView === "Documents" && (
+                <DocumentsView
+                  documents={documents}
+                  profile={profile}
+                  onAddDocument={handleAddDocument}
+                  onDeleteDocument={handleDeleteDocument}
+                  onTriggerUpgrade={triggerUpgrade}
+                />
+              )}
 
-          {activeView === "Settings" && (
-            <SettingsView
-              profile={profile}
-              onUpdateProfile={handleUpdateProfile}
-              onTriggerUpgrade={triggerUpgrade}
-              isInstallable={!!pwaPrompt}
-              onInstall={triggerPwaInstall}
-            />
-          )}
+              {activeView === "Settings" && (
+                <SettingsView
+                  profile={profile}
+                  onUpdateProfile={handleUpdateProfile}
+                  onTriggerUpgrade={triggerUpgrade}
+                  isInstallable={!!pwaPrompt}
+                  onInstall={triggerPwaInstall}
+                />
+              )}
+            </motion.div>
+          </AnimatePresence>
         </div>
       </main>
 
