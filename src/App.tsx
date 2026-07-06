@@ -222,36 +222,15 @@ export default function App() {
           const res = await fetch(`/api/stripe/verify-session?session_id=${sessionId}`);
           const data = await res.json();
 
-          if (data.success) {
-            // Retrieve current profile
-            const cachedProfile = localStorage.getItem("crm_profile");
-            const activeProfile = profile || (cachedProfile ? JSON.parse(cachedProfile) : null);
+          if (data.success && data.profile) {
+            setProfile(data.profile);
+            localStorage.setItem("crm_profile", JSON.stringify(data.profile));
+            setCloudSyncStatus("synced");
 
-            if (activeProfile) {
-              const renewsAt = new Date();
-              renewsAt.setDate(renewsAt.getDate() + 30);
-
-              const subData: Partial<FreelancerProfile> = {
-                plan: "Pro",
-                subscriptionStatus: "active",
-                subscriptionRegion: activeProfile.country === "IN" ? "IN" : "US",
-                subscriptionMethod: "Stripe Card (Real-time)",
-                subscriptionRenewsAt: renewsAt.toISOString(),
-              };
-
-              const updatedProfile = { ...activeProfile, ...subData };
-              setProfile(updatedProfile);
-              localStorage.setItem("crm_profile", JSON.stringify(updatedProfile));
-
-              // Update Firestore profile directly
-              await setDoc(doc(db, "freelancers", activeProfile.id), updatedProfile, { merge: true });
-              setCloudSyncStatus("synced");
-
-              // Instruct UpgradeModal to show success state and open it!
-              sessionStorage.setItem("stripe_payment_success", "true");
-              setUpgradeOpen(true);
-              setUpgradeReason("stripe_success_redirect");
-            }
+            // Instruct UpgradeModal to show success state and open it!
+            sessionStorage.setItem("stripe_payment_success", "true");
+            setUpgradeOpen(true);
+            setUpgradeReason("stripe_success_redirect");
           }
         } catch (err) {
           console.error("Failed to verify Stripe payment:", err);

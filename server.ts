@@ -324,12 +324,24 @@ app.get("/api/stripe/verify-session", async (req, res) => {
     const session = await stripe.checkout.sessions.retrieve(session_id);
 
     if (session.payment_status === "paid" || session.status === "complete") {
+      const freelancerId = session.metadata?.freelancerId;
+      let updatedProfile = null;
+      if (freelancerId) {
+        updatedProfile = await activateProSubscription(
+          freelancerId,
+          "monthly",
+          "Stripe" as any,
+          session.id,
+          "Other"
+        );
+      }
       res.json({
         success: true,
         paymentStatus: session.payment_status,
-        freelancerId: session.metadata?.freelancerId || null,
+        freelancerId: freelancerId || null,
         customerId: typeof session.customer === "string" ? session.customer : null,
         subscriptionId: typeof session.subscription === "string" ? session.subscription : null,
+        profile: updatedProfile,
       });
     } else {
       res.json({
@@ -558,6 +570,35 @@ app.post("/api/paypal/verify-subscription", authenticateFirebaseUser, async (req
     const subData = await subRes.json();
     const status = subData.status; // ACTIVE, APPROVED, etc.
 
+    // 1. Verify custom_id to prevent account hijacking / ID reusing
+    const customId = subData.custom_id || "";
+    if (!customId || !customId.startsWith(`${freelancerId}:`)) {
+      return res.status(400).json({
+        success: false,
+        error: "Unauthorized: This subscription ID is not associated with your user account.",
+      });
+    }
+
+    // 2. Prevent duplicate processing or ID reuse
+    const paymentDoc = await db.collection("payments").doc(subscriptionId).get();
+    if (paymentDoc.exists) {
+      const paymentData = paymentDoc.data();
+      if (paymentData?.userId !== freelancerId) {
+        return res.status(400).json({
+          success: false,
+          error: "Unauthorized: This subscription is already claimed by another user.",
+        });
+      }
+      
+      console.log(`[PayPal] Subscription ${subscriptionId} already processed for user ${freelancerId}. Returning existing profile.`);
+      const profile = await getFreelancerProfile(freelancerId);
+      return res.json({
+        success: true,
+        profile,
+        duplicate: true,
+      });
+    }
+
     if (status === "ACTIVE" || status === "APPROVED") {
       console.log(`[PayPal] Subscription ${subscriptionId} verified successfully with status ${status}`);
       
@@ -574,14 +615,45 @@ app.post("/api/paypal/verify-subscription", authenticateFirebaseUser, async (req
         profile: updatedProfile,
       });
     } else {
+      console.warn(`[PayPal] Subscription ${subscriptionId} verification failed with status: ${status}. Keeping user on Free.`);
+      await cancelOrExpireProSubscription(freelancerId, "PayPal", "expired", subscriptionId);
+      const updatedProfile = await getFreelancerProfile(freelancerId);
       return res.status(400).json({
         success: false,
+        profile: updatedProfile,
         error: `PayPal subscription status is not active (current status: ${status})`,
       });
     }
   } catch (err: any) {
     console.error("PayPal Subscription verification error:", err);
+    // Explicitly keep on Free if we encounter error
+    try {
+      if (req.userId) {
+        await cancelOrExpireProSubscription(req.userId, "PayPal", "expired", req.body.subscriptionId);
+      }
+    } catch (ignore) {}
     res.status(500).json({ error: err.message || "Failed to verify PayPal subscription" });
+  }
+});
+
+// Secure API endpoint to cancel subscription (prevents direct frontend DB manipulation)
+app.post("/api/subscription/cancel", authenticateFirebaseUser, async (req: any, res) => {
+  try {
+    const freelancerId = req.userId;
+    if (!freelancerId) {
+      return res.status(400).json({ error: "Missing freelancer ID." });
+    }
+
+    await cancelOrExpireProSubscription(freelancerId, "PayPal", "cancelled", "user_initiated");
+    const updatedProfile = await getFreelancerProfile(freelancerId);
+
+    return res.json({
+      success: true,
+      profile: updatedProfile,
+    });
+  } catch (err: any) {
+    console.error("Subscription cancellation error:", err);
+    res.status(500).json({ error: err.message || "Failed to cancel subscription" });
   }
 });
 
@@ -781,6 +853,10 @@ app.post("/api/paypal/capture-order", authenticateFirebaseUser, async (req: any,
     const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
     const apiUrl = process.env.PAYPAL_API_URL || "https://api-m.sandbox.paypal.com";
 
+    if (!clientId || !clientSecret) {
+      return res.status(400).json({ error: "PayPal credentials not configured on the server." });
+    }
+
     const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
     const tokenRes = await fetch(`${apiUrl}/v1/oauth2/token`, {
       method: "POST",
@@ -790,6 +866,10 @@ app.post("/api/paypal/capture-order", authenticateFirebaseUser, async (req: any,
       },
       body: "grant_type=client_credentials",
     });
+
+    if (!tokenRes.ok) {
+      throw new Error(`Failed to authenticate with PayPal: ${await tokenRes.text()}`);
+    }
 
     const tokenData = await tokenRes.json();
     const accessToken = tokenData.access_token;
@@ -802,9 +882,40 @@ app.post("/api/paypal/capture-order", authenticateFirebaseUser, async (req: any,
       },
     });
 
+    if (!captureRes.ok) {
+      throw new Error(`Failed to capture PayPal order ${orderId}: ${await captureRes.text()}`);
+    }
+
     const captureData = await captureRes.json();
     if (captureData.status === "COMPLETED") {
-      const captureId = captureData.purchase_units?.[0]?.payments?.captures?.[0]?.id || orderId;
+      const purchaseUnit = captureData.purchase_units?.[0];
+      const customId = purchaseUnit?.custom_id || "";
+      
+      // Verify custom_id matches current user to prevent hijacking/reusing order IDs
+      if (!customId || !customId.startsWith(`${freelancerId}:`)) {
+        return res.status(400).json({ error: "Unauthorized: This order ID is not associated with your user account." });
+      }
+
+      const captureId = purchaseUnit?.payments?.captures?.[0]?.id || orderId;
+
+      // Prevent duplicate processing or ID reuse
+      const paymentDoc = await db.collection("payments").doc(captureId).get();
+      if (paymentDoc.exists) {
+        const paymentData = paymentDoc.data();
+        if (paymentData?.userId !== freelancerId) {
+          return res.status(400).json({ error: "Unauthorized: This transaction has already been claimed by another user." });
+        }
+        console.log(`[PayPal] Order ${captureId} already processed. Returning existing profile.`);
+        const profile = await getFreelancerProfile(freelancerId);
+        return res.json({
+          success: true,
+          gateway: "PayPal",
+          transactionId: captureId,
+          profile,
+          duplicate: true,
+        });
+      }
+
       const updatedProfile = await activateProSubscription(
         freelancerId,
         planName || "Monthly",
@@ -819,10 +930,18 @@ app.post("/api/paypal/capture-order", authenticateFirebaseUser, async (req: any,
         profile: updatedProfile,
       });
     } else {
+      console.warn(`[PayPal] Order capture ${orderId} was not completed (status: ${captureData.status}). Downgrading/keeping user on Free.`);
+      await cancelOrExpireProSubscription(freelancerId, "PayPal", "expired", orderId);
       return res.status(400).json({ error: "PayPal order was not completed." });
     }
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    console.error("PayPal capture order error:", err);
+    try {
+      if (req.userId) {
+        await cancelOrExpireProSubscription(req.userId, "PayPal", "expired", req.body.orderId);
+      }
+    } catch (ignore) {}
+    res.status(500).json({ error: err.message || "Failed to capture PayPal order" });
   }
 });
 

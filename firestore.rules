@@ -12,6 +12,18 @@ service cloud.firestore {
       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
+    function getFreelancer(freelancerId) {
+      return get(/databases/$(database)/documents/freelancers/$(freelancerId)).data;
+    }
+
+    function isProUser(freelancerId) {
+      return exists(/databases/$(database)/documents/freelancers/$(freelancerId)) 
+        && (
+          get(/databases/$(database)/documents/freelancers/$(freelancerId)).data.plan == 'Pro' 
+          || (get(/databases/$(database)/documents/freelancers/$(freelancerId)).data.premium == true)
+        );
+    }
+
     // Freelancer profiles
     match /freelancers/{freelancerId} {
       allow get: if isValidId(freelancerId);
@@ -83,7 +95,10 @@ service cloud.firestore {
     // Invoices collection
     match /invoices/{invoiceId} {
       allow read: if isValidId(invoiceId);
-      allow create, update: if isValidId(invoiceId) && request.resource.data.id == invoiceId && isValidId(request.resource.data.freelancerId);
+      allow create, update: if isValidId(invoiceId) 
+        && request.resource.data.id == invoiceId 
+        && isValidId(request.resource.data.freelancerId)
+        && (isProUser(request.resource.data.freelancerId) || request.resource.data.status == 'Draft');
       allow delete: if isValidId(invoiceId);
     }
 
@@ -96,9 +111,18 @@ service cloud.firestore {
 
     // Documents collection
     match /documents/{documentId} {
-      allow read: if isValidId(documentId);
-      allow create, update: if isValidId(documentId) && request.resource.data.id == documentId && isValidId(request.resource.data.freelancerId);
-      allow delete: if isValidId(documentId);
+      allow read: if isValidId(documentId) 
+        && (resource == null || isProUser(resource.data.freelancerId));
+      allow create: if isValidId(documentId) 
+        && request.resource.data.id == documentId 
+        && isValidId(request.resource.data.freelancerId)
+        && isProUser(request.resource.data.freelancerId);
+      allow update: if isValidId(documentId) 
+        && request.resource.data.id == documentId 
+        && isValidId(request.resource.data.freelancerId)
+        && isProUser(request.resource.data.freelancerId);
+      allow delete: if isValidId(documentId) 
+        && (resource == null || isProUser(resource.data.freelancerId));
     }
   }
 }

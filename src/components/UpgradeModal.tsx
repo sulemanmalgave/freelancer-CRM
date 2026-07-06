@@ -247,6 +247,11 @@ export default function UpgradeModal({
                 setPurchaseStage("failed");
               }
             },
+            onCancel: (data: any) => {
+              console.log("[PayPal] Subscription checkout was cancelled", data);
+              setPaymentError("PayPal subscription checkout was cancelled.");
+              setPurchaseStage("plans");
+            },
             onError: (err: any) => {
               console.error("PayPal Subscription error:", err);
               setPaymentError("PayPal Subscription process was cancelled or refused by issuing network.");
@@ -380,26 +385,24 @@ export default function UpgradeModal({
     setActionSuccess("");
 
     try {
-      const pDoc = doc(db, "freelancers", profile.id);
-      const updatedProfile = {
-        ...profile,
-        plan: "Free",
-        premium: false,
-        subscriptionStatus: "cancelled" as const,
-        subscriptionRenewsAt: "",
-      };
-      await setDoc(pDoc, updatedProfile);
-
-      onUpgradeSuccess("Free", {
-        plan: "Free",
-        premium: false,
-        subscriptionStatus: "cancelled",
-        subscriptionRenewsAt: "",
+      const authHeader = await getAuthHeader();
+      const res = await fetch("/api/subscription/cancel", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeader,
+        },
       });
 
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to cancel subscription on the server.");
+      }
+
+      onUpgradeSuccess("Free", data.profile);
       setActionSuccess("Your active Pro subscription was cancelled successfully. Workspace downgraded to Free.");
-    } catch (err) {
-      setActionError("Error cancelling subscription on backend Firestore.");
+    } catch (err: any) {
+      setActionError(err.message || "Error cancelling subscription on backend.");
     } finally {
       setIsCancelling(false);
     }

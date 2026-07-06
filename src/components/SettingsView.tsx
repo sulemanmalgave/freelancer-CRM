@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import { User, Landmark, Coins, ShieldCheck, Sun, Award, Sparkles, RefreshCw, Laptop, Download } from "lucide-react";
 import { FreelancerProfile } from "../types";
+import { db } from "../firebase";
+import { doc, getDoc } from "firebase/firestore";
 
 interface SettingsViewProps {
   profile: FreelancerProfile;
@@ -52,13 +54,27 @@ export default function SettingsView({
 
   const handleRestorePurchases = async () => {
     setIsRestoring(true);
-    // Simulate RevenueCat entitlement restore lookup
-    await new Promise((r) => setTimeout(r, 1200));
 
-    // Force upgrade to Pro if local restore matches
-    onUpdateProfile({ plan: "Pro" });
-    setIsRestoring(false);
-    alert("Entitlements restored! Pro subscription activated successfully via app store receipt.");
+    try {
+      const pDoc = doc(db, "freelancers", profile.id);
+      const pSnap = await getDoc(pDoc);
+
+      if (pSnap.exists()) {
+        const stored = pSnap.data() as FreelancerProfile;
+        if (stored.premium === true || (stored.plan && stored.plan !== "Free")) {
+          onUpdateProfile(stored);
+          alert("Subscription entitlements restored from your cloud profile successfully!");
+          return;
+        }
+      }
+
+      await new Promise((r) => setTimeout(r, 1000));
+      alert("No active subscription entitlements were found for this account on the server.");
+    } catch (err) {
+      alert("Unable to locate valid billing parameters on your account.");
+    } finally {
+      setIsRestoring(false);
+    }
   };
 
   return (
