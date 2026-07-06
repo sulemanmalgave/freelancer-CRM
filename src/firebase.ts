@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
+import { initializeFirestore } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 
 const firebaseConfig = {
@@ -16,8 +16,10 @@ const databaseId = "ai-studio-d5cae848-c1ed-4f2e-9f89-e9c69ed15c6c";
 // Initialize Firebase
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
-// Initialize Firestore targeting the custom databaseId
-export const db = getFirestore(app, databaseId);
+// Initialize Firestore targeting the custom databaseId with experimentalForceLongPolling enabled
+export const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true,
+}, databaseId);
 
 // Export Firebase Auth
 export const auth = getAuth(app);
