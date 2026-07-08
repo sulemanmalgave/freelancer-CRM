@@ -10,6 +10,7 @@ interface SettingsViewProps {
   onTriggerUpgrade: (reason: string) => void;
   isInstallable: boolean;
   onInstall: () => void;
+  onNavigate?: (view: string) => void;
 }
 
 export default function SettingsView({
@@ -18,6 +19,7 @@ export default function SettingsView({
   onTriggerUpgrade,
   isInstallable,
   onInstall,
+  onNavigate,
 }: SettingsViewProps) {
   const [name, setName] = useState(profile?.name || "");
   const [businessName, setBusinessName] = useState(profile?.businessName || "");
@@ -278,6 +280,31 @@ export default function SettingsView({
                 App is running-ready on your machine. Browser-native installation is fully compatible with Microsoft Store, Chrome, and Safari.
               </div>
             )}
+          </div>
+        </div>
+
+        {/* Legal & Compliance Section */}
+        <div className="p-5 glass-panel rounded-2xl text-xs space-y-3">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 bg-emerald-50 border border-emerald-100 rounded-lg text-emerald-600">
+              <ShieldCheck className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="font-bold text-xs uppercase tracking-widest text-slate-800">Legal & Compliance</h3>
+              <p className="text-[9px] text-slate-400">Security & Privacy Terms</p>
+            </div>
+          </div>
+          <p className="text-[10px] text-slate-500 leading-relaxed font-medium">
+            We adhere to strict data custody and Zero-Trust standards. Client profiles, contract briefs, and invoicing structures are synchronized exclusively with your authenticated cloud workspace.
+          </p>
+          <div className="pt-2 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => onNavigate?.("PrivacyPolicy")}
+              className="text-xs font-bold text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1 cursor-pointer"
+            >
+              <span>Read Full Privacy Policy &rarr;</span>
+            </button>
           </div>
         </div>
       </div>

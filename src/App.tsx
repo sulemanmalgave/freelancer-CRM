@@ -48,6 +48,7 @@ import LeadsView from "./components/LeadsView";
 import RevenueView from "./components/RevenueView";
 import DocumentsView from "./components/DocumentsView";
 import SettingsView from "./components/SettingsView";
+import PrivacyPolicyView from "./components/PrivacyPolicyView";
 
 export default function App() {
   const [profile, setProfile] = useState<FreelancerProfile | null>(null);
@@ -59,7 +60,9 @@ export default function App() {
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
 
   // System states
-  const [activeView, setActiveView] = useState("Dashboard");
+  const [activeView, setActiveView] = useState(() => {
+    return window.location.pathname === "/privacy-policy" ? "PrivacyPolicy" : "Dashboard";
+  });
   const [searchTerm, setSearchTerm] = useState("");
   const [cloudSyncStatus, setCloudSyncStatus] = useState<"syncing" | "synced" | "offline">("synced");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -104,6 +107,31 @@ export default function App() {
       window.removeEventListener("appinstalled", handleAppInstalled);
     };
   }, []);
+
+  // Sync view route back and forth with window location pathname
+  useEffect(() => {
+    const handlePopState = () => {
+      if (window.location.pathname === "/privacy-policy") {
+        setActiveView("PrivacyPolicy");
+      } else {
+        setActiveView("Dashboard");
+      }
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  useEffect(() => {
+    if (activeView === "PrivacyPolicy") {
+      if (window.location.pathname !== "/privacy-policy") {
+        window.history.pushState(null, "", "/privacy-policy");
+      }
+    } else {
+      if (window.location.pathname === "/privacy-policy") {
+        window.history.pushState(null, "", "/");
+      }
+    }
+  }, [activeView]);
 
   const triggerPwaInstall = async () => {
     try {
@@ -489,6 +517,28 @@ export default function App() {
   };
 
   // Render Setup Router
+  if (activeView === "PrivacyPolicy" && (!profile || !profile.onboardingCompleted)) {
+    return (
+      <div className="min-h-screen bg-slate-50 text-slate-800 antialiased font-sans relative py-12 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-4xl mx-auto">
+          {/* Back to Home/Onboarding link */}
+          <div className="mb-6">
+            <button
+              onClick={() => {
+                setActiveView("Dashboard");
+                window.history.pushState(null, "", "/");
+              }}
+              className="inline-flex items-center gap-2 text-xs font-bold text-slate-550 hover:text-indigo-600 transition-colors cursor-pointer"
+            >
+              &larr; Back to Onboarding
+            </button>
+          </div>
+          <PrivacyPolicyView isPublic={true} />
+        </div>
+      </div>
+    );
+  }
+
   if (!profile || !profile.onboardingCompleted) {
     return <Onboarding onComplete={handleOnboardingComplete} />;
   }
@@ -610,8 +660,14 @@ export default function App() {
         </nav>
 
         {/* Footer info (humble and useful, no telemetries) */}
-        <div className="px-6 text-[10px] text-slate-400">
+        <div className="px-6 pt-4 border-t border-slate-100/10 text-[10px] text-slate-400 flex flex-col gap-1.5 select-none">
           <span>Signed: {profile.name}</span>
+          <button
+            onClick={() => setActiveView("PrivacyPolicy")}
+            className="text-left font-bold text-slate-450 hover:text-indigo-600 hover:underline transition-all cursor-pointer"
+          >
+            Privacy Policy
+          </button>
         </div>
       </aside>
 
@@ -676,6 +732,19 @@ export default function App() {
                 </button>
               );
             })}
+
+            {/* Mobile Footer Privacy Link */}
+            <div className="pt-2 border-t border-black/5 flex justify-center">
+              <button
+                onClick={() => {
+                  setActiveView("PrivacyPolicy");
+                  setMobileMenuOpen(false);
+                }}
+                className="py-1.5 px-3 text-[10px] font-bold text-slate-500 hover:text-indigo-650 transition-colors flex items-center gap-1 cursor-pointer"
+              >
+                <span>Privacy Policy</span>
+              </button>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -813,7 +882,12 @@ export default function App() {
                   onTriggerUpgrade={triggerUpgrade}
                   isInstallable={!!pwaPrompt}
                   onInstall={triggerPwaInstall}
+                  onNavigate={setActiveView}
                 />
+              )}
+
+              {activeView === "PrivacyPolicy" && (
+                <PrivacyPolicyView />
               )}
             </motion.div>
           </AnimatePresence>
