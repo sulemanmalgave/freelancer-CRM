@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import "dotenv/config";
 import Stripe from "stripe";
 import crypto from "crypto";
@@ -37,12 +38,19 @@ import { getFirestore, Timestamp } from "firebase-admin/firestore";
 
 function ensureFirebaseAdminInitialized() {
   if (getApps().length === 0) {
-    const saEmail = process.env.AUTHORIZED_SERVICE_ACCOUNT_EMAIL;
-    let detectedProjectId = "";
-    if (saEmail && saEmail.includes("@") && saEmail.includes(".iam.gserviceaccount.com")) {
-      detectedProjectId = saEmail.split("@")[1].split(".iam.gserviceaccount.com")[0];
+    let finalProjectId = "gen-lang-client-0198820455";
+    try {
+      const configPath = path.join(process.cwd(), "firebase-applet-config.json");
+      if (fs.existsSync(configPath)) {
+        const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+        if (config.projectId) {
+          finalProjectId = config.projectId;
+        }
+      }
+    } catch (err) {
+      console.warn("[Firebase Admin] Failed to read firebase-applet-config.json, using default project:", err);
     }
-    const finalProjectId = detectedProjectId || process.env.GOOGLE_CLOUD_PROJECT || "gen-lang-client-0198820455";
+
     console.log(`[Firebase Admin] Dynamically initializing with project ID: ${finalProjectId}`);
     try {
       initializeApp({
@@ -63,9 +71,27 @@ let dbInstance: any = null;
 function getDbInstance() {
   ensureFirebaseAdminInitialized();
   if (!dbInstance) {
-    const customDbId = "ai-studio-d5cae848-c1ed-4f2e-9f89-e9c69ed15c6c";
+    let customDbId = "ai-studio-d5cae848-c1ed-4f2e-9f89-e9c69ed15c6c";
+    try {
+      const configPath = path.join(process.cwd(), "firebase-applet-config.json");
+      if (fs.existsSync(configPath)) {
+        const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+        if (config.firestoreDatabaseId) {
+          customDbId = config.firestoreDatabaseId;
+        }
+      }
+    } catch (err) {
+      console.warn("[Firebase Admin] Failed to read customDbId from firebase-applet-config.json, using default:", err);
+    }
+
     try {
       dbInstance = getFirestore(getApp(), customDbId);
+      // Trigger lazy load of pending activations on DB initialization
+      setTimeout(() => {
+        loadPendingActivationsFromFirestore().catch((err: any) => {
+          console.error("[Billing Engine] Lazy pending load error:", err);
+        });
+      }, 100);
     } catch (err: any) {
       console.error("[Firebase Admin] Failed to initialize Firestore instance, creating stub fallback:", err);
       // Create a dummy / mock Firestore-like proxy to gracefully prevent hard crashes
@@ -168,6 +194,138 @@ async function registerWebhookId(eventId: string): Promise<boolean> {
   }
 }
 
+interface PendingActivation {
+  freelancerId: string;
+  planName: string;
+  gateway: "Razorpay" | "PayPal";
+  transactionId: string;
+  region: "IN" | "Other";
+  addedAt: string;
+}
+
+const pendingActivations: PendingActivation[] = [];
+
+function addPendingActivation(activation: PendingActivation) {
+  if (!pendingActivations.some(a => a.transactionId === activation.transactionId)) {
+    pendingActivations.push(activation);
+    console.log(`[Pending Activation Queue] Added transaction: ${activation.transactionId} for user ${activation.freelancerId}. Queue size: ${pendingActivations.length}`);
+  }
+}
+
+async function processPendingActivations() {
+  if (pendingActivations.length === 0) return;
+  console.log(`[Background Worker] Processing ${pendingActivations.length} pending Pro activations...`);
+
+  const activeQueue = [...pendingActivations];
+  for (const item of activeQueue) {
+    try {
+      console.log(`[Background Worker] Retrying Pro activation for user ${item.freelancerId}, transaction ${item.transactionId}`);
+      
+      const isQuarterly = item.planName === "3 Months" || item.planName === "quarterly";
+      const durationInDays = isQuarterly ? 90 : 30;
+      const expiryDate = new Date();
+      expiryDate.setDate(expiryDate.getDate() + durationInDays);
+
+      const billingCountry = item.region === "IN" ? "IN" : "Other";
+      const currency = item.region === "IN" ? "INR" : "USD";
+      const amount = item.region === "IN" ? (isQuarterly ? 399 : 199) : (isQuarterly ? 7.99 : 2.99);
+      const subPlan = isQuarterly ? "quarterly" : "monthly";
+
+      const userUpdate = {
+        plan: "pro",
+        billingCountry: billingCountry,
+        paymentProvider: item.gateway.toLowerCase(),
+        subscriptionPlan: subPlan,
+        subscriptionStatus: "active",
+        proUntil: Timestamp.fromDate(expiryDate),
+        providerCustomerId: null,
+        providerSubscriptionId: item.transactionId,
+      };
+
+      const paymentRecord = {
+        userId: item.freelancerId,
+        provider: item.gateway.toLowerCase(),
+        planId: subPlan,
+        amount: amount,
+        currency: currency,
+        status: "completed",
+        providerPaymentId: item.transactionId,
+        createdAt: Timestamp.now(),
+      };
+
+      const freelancerUpdate = {
+        plan: "Pro",
+        premium: true,
+        subscriptionStatus: "active",
+        subscriptionRegion: item.region,
+        subscriptionMethod: item.gateway,
+        subscriptionRenewsAt: expiryDate.toISOString(),
+        paymentGateway: item.gateway,
+        purchaseDate: new Date().toISOString(),
+        expiryDate: expiryDate.toISOString(),
+        transactionId: item.transactionId,
+        billingCountry: billingCountry,
+        country: billingCountry,
+      };
+
+      await Promise.all([
+        db.collection("users").doc(item.freelancerId).set(userUpdate, { merge: true }),
+        db.collection("freelancers").doc(item.freelancerId).set(freelancerUpdate, { merge: true }),
+        db.collection("payments").doc(item.transactionId).set(paymentRecord),
+      ]);
+
+      try {
+        await db.collection("pending_activations").doc(item.transactionId).delete();
+        console.log(`[Background Worker] Removed pending activation from Firestore: ${item.transactionId}`);
+      } catch (delErr) {
+        // Ignore or log
+      }
+
+      const index = pendingActivations.findIndex(a => a.transactionId === item.transactionId);
+      if (index !== -1) {
+        pendingActivations.splice(index, 1);
+      }
+      console.log(`[Background Worker] Successfully activated Pro subscription for user ${item.freelancerId}, transaction ${item.transactionId}`);
+    } catch (err: any) {
+      console.error(`[Background Worker] Retry failed for transaction ${item.transactionId}:`, err.message || err);
+    }
+  }
+}
+
+// Set up periodic polling for pending activations (every 15 seconds)
+setInterval(() => {
+  processPendingActivations().catch(err => {
+    console.error("[Background Worker] Exception in background processing loop:", err);
+  });
+}, 15000);
+
+async function loadPendingActivationsFromFirestore() {
+  try {
+    console.log("[Billing Engine] Loading any existing pending activations from Firestore...");
+    const snap = await db.collection("pending_activations").get();
+    let count = 0;
+    snap.forEach((doc: any) => {
+      const data = doc.data();
+      if (data && data.freelancerId && data.transactionId) {
+        addPendingActivation({
+          freelancerId: data.freelancerId,
+          planName: data.planName || "monthly",
+          gateway: data.gateway,
+          transactionId: data.transactionId,
+          region: data.region || "Other",
+          addedAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+        });
+        count++;
+      }
+    });
+    if (count > 0) {
+      console.log(`[Billing Engine] Successfully loaded ${count} pending activations from Firestore.`);
+    }
+  } catch (err) {
+    console.warn("[Billing Engine] Failed to load pending activations from Firestore (might be uninitialized yet):", err);
+  }
+}
+
 // Security Helper to activate Pro subscription & store payment record
 async function activateProSubscription(
   freelancerId: string,
@@ -183,7 +341,7 @@ async function activateProSubscription(
 
   const billingCountry = region === "IN" ? "IN" : "Other";
   const currency = region === "IN" ? "INR" : "USD";
-  const amount = region === "IN" ? (isQuarterly ? 399 : 199) : (isQuarterly ? 11.99 : 4.99);
+  const amount = region === "IN" ? (isQuarterly ? 399 : 199) : (isQuarterly ? 7.99 : 2.99);
   const subPlan = isQuarterly ? "quarterly" : "monthly";
 
   // 1. users/{uid} Structure
@@ -226,32 +384,72 @@ async function activateProSubscription(
     country: billingCountry,
   };
 
-  console.log(`[Billing Engine] Atomically activating Pro Plan for uid: ${freelancerId} via ${gateway}. Transaction: ${transactionId}`);
+  console.log(`[Billing Engine] Initiating Pro activation. uid: ${freelancerId} via ${gateway}. Transaction: ${transactionId}`);
 
-  try {
-    await Promise.all([
-      db.collection("users").doc(freelancerId).set(userUpdate, { merge: true }),
-      db.collection("freelancers").doc(freelancerId).set(freelancerUpdate, { merge: true }),
-      db.collection("payments").doc(transactionId).set(paymentRecord),
-    ]);
+  let attempts = 0;
+  const maxAttempts = 5;
+  let success = false;
+  let lastError: any = null;
 
-    const updatedSnap = await db.collection("freelancers").doc(freelancerId).get();
-    return updatedSnap.exists ? updatedSnap.data() : freelancerUpdate;
-  } catch (err: any) {
-    const errMsg = err?.message || String(err);
-    console.error(`[Billing Engine] Error performing Firestore updates during active subscription activation:`, err);
+  while (attempts < maxAttempts && !success) {
+    attempts++;
+    console.log(`[Billing Engine] Firestore write attempt ${attempts}/${maxAttempts} for uid: ${freelancerId}, txn: ${transactionId}`);
+    try {
+      await Promise.all([
+        db.collection("users").doc(freelancerId).set(userUpdate, { merge: true }),
+        db.collection("freelancers").doc(freelancerId).set(freelancerUpdate, { merge: true }),
+        db.collection("payments").doc(transactionId).set(paymentRecord),
+      ]);
+      success = true;
+      console.log(`[Billing Engine] Successfully wrote Pro subscription to Firestore on attempt ${attempts}`);
+    } catch (err: any) {
+      lastError = err;
+      console.warn(`[Billing Engine] Firestore write attempt ${attempts} failed:`, err.message || err);
+      if (attempts < maxAttempts) {
+        // Wait 1 second on first retry, 2s on second, etc.
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempts));
+      }
+    }
+  }
 
-    // If we have a credential or auth configuration failure, do not block the user payment flow
-    const isCredentialError = errMsg.includes("Could not load the default credentials") || 
-                              errMsg.includes("credentials") || 
-                              errMsg.includes("auth") ||
-                              errMsg.includes("credential");
-
-    if (isCredentialError) {
-      console.warn(`[Billing Engine] Firebase/Google credential loading error detected. Falling back to local/memory upgrade response to bypass backend blockage.`);
+  if (success) {
+    try {
+      const updatedSnap = await db.collection("freelancers").doc(freelancerId).get();
+      return updatedSnap.exists ? updatedSnap.data() : freelancerUpdate;
+    } catch (err) {
+      console.warn("[Billing Engine] Failed to fetch updated profile, returning local update:", err);
       return freelancerUpdate;
     }
-    throw err;
+  } else {
+    // 9. If Firestore update fails after payment succeeds, store the payment as pending and retry automatically until Pro is activated.
+    console.error(`[Billing Engine] ALL ${maxAttempts} Firestore write attempts FAILED for user: ${freelancerId}. Storing activation as PENDING.`);
+    
+    addPendingActivation({
+      freelancerId,
+      planName,
+      gateway,
+      transactionId,
+      region,
+      addedAt: new Date().toISOString()
+    });
+
+    // Also attempt to save it in Firestore's "pending_activations" collection
+    try {
+      await db.collection("pending_activations").doc(transactionId).set({
+        freelancerId,
+        planName,
+        gateway,
+        transactionId,
+        region,
+        status: "pending",
+        createdAt: Timestamp.now(),
+      });
+      console.log(`[Billing Engine] Saved pending activation record to Firestore for transaction: ${transactionId}`);
+    } catch (dbErr) {
+      console.error(`[Billing Engine] Failed to write pending activation document to Firestore:`, dbErr);
+    }
+
+    throw new Error(`Database sync failed, but your payment was processed. Your subscription has been stored as pending and will be automatically activated shortly. Transaction ID: ${transactionId}`);
   }
 }
 
@@ -524,17 +722,230 @@ function getRazorpayCredentials() {
   return { keyId, keySecret };
 }
 
+// Dynamic PayPal product and billing plan auto-provisioning to avoid RESOURCE_NOT_FOUND (INVALID_RESOURCE_ID)
+let paypalCachePromise: Promise<{ monthlyPlanId: string, quarterlyPlanId: string } | null> | null = null;
+
+async function getOrCreatePaypalPlans(apiUrl: string, clientId: string, clientSecret: string) {
+  if (!paypalCachePromise) {
+    paypalCachePromise = (async () => {
+      // 1. Try to read cached plans from Firestore first
+      try {
+        const configDoc = await db.collection("config").doc("paypal_v3").get();
+        if (configDoc.exists) {
+          const data = configDoc.data();
+          if (data && data.paypalPlanMonthly && data.paypalPlanQuarterly) {
+            console.log("[PayPal] Retrieved active plan IDs from Firestore cache.");
+            return {
+              monthlyPlanId: data.paypalPlanMonthly,
+              quarterlyPlanId: data.paypalPlanQuarterly,
+            };
+          }
+        }
+      } catch (err) {
+        console.warn("[PayPal] Failed to read cached plans from Firestore. Proceeding to fetch/create dynamically...", err);
+      }
+
+      // 2. Fallback to dynamic creation via PayPal REST APIs
+      try {
+        console.log("[PayPal] Creating dynamic product and plans under the configured merchant account...");
+
+        // Authenticate with PayPal
+        const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
+        const tokenRes = await fetch(`${apiUrl}/v1/oauth2/token`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Basic ${basicAuth}`,
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: "grant_type=client_credentials",
+        });
+
+        if (!tokenRes.ok) {
+          throw new Error(`PayPal auth failed: ${await tokenRes.text()}`);
+        }
+
+        const tokenData = await tokenRes.json();
+        const accessToken = tokenData.access_token;
+
+        // Create catalog Product
+        const requestIdProd = `req-prod-${Date.now()}`;
+        const productRes = await fetch(`${apiUrl}/v1/catalogs/products`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+            "PayPal-Request-Id": requestIdProd,
+          },
+          body: JSON.stringify({
+            name: "Freelancer Pro Plan",
+            description: "Premium access to Freelancer CRM & Billing Tools",
+            type: "SERVICE",
+            category: "SOFTWARE"
+          }),
+        });
+
+        if (!productRes.ok) {
+          throw new Error(`PayPal product creation failed: ${await productRes.text()}`);
+        }
+
+        const productData = await productRes.json();
+        const productId = productData.id;
+        console.log(`[PayPal] Successfully created product with ID: ${productId}`);
+
+        // Create Pro Monthly Plan ($2.99 / Month)
+        const requestIdMonthly = `req-plan-mon-${Date.now()}`;
+        const monthlyRes = await fetch(`${apiUrl}/v1/billing/plans`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+            "PayPal-Request-Id": requestIdMonthly,
+          },
+          body: JSON.stringify({
+            product_id: productId,
+            name: "Pro Monthly Plan",
+            description: "Monthly subscription for Pro features",
+            status: "ACTIVE",
+            billing_cycles: [
+              {
+                frequency: {
+                  interval_unit: "MONTH",
+                  interval_count: 1
+                },
+                tenure_type: "REGULAR",
+                sequence: 1,
+                total_cycles: 0,
+                pricing_scheme: {
+                  fixed_price: {
+                    value: "2.99",
+                    currency_code: "USD"
+                  }
+                }
+              }
+            ],
+            payment_preferences: {
+              auto_bill_outstanding: true,
+              setup_fee: {
+                value: "0",
+                currency_code: "USD"
+              },
+              setup_fee_failure_action: "CONTINUE",
+              payment_failure_threshold: 3
+            }
+          }),
+        });
+
+        if (!monthlyRes.ok) {
+          throw new Error(`PayPal monthly plan creation failed: ${await monthlyRes.text()}`);
+        }
+
+        const monthlyData = await monthlyRes.json();
+        const monthlyPlanId = monthlyData.id;
+        console.log(`[PayPal] Successfully created Monthly Plan: ${monthlyPlanId}`);
+
+        // Create Pro Quarterly Plan ($7.99 / 3 Months)
+        const requestIdQuarterly = `req-plan-qtr-${Date.now()}`;
+        const quarterlyRes = await fetch(`${apiUrl}/v1/billing/plans`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+            "PayPal-Request-Id": requestIdQuarterly,
+          },
+          body: JSON.stringify({
+            product_id: productId,
+            name: "Pro Quarterly Plan",
+            description: "Quarterly subscription for Pro features",
+            status: "ACTIVE",
+            billing_cycles: [
+              {
+                frequency: {
+                  interval_unit: "MONTH",
+                  interval_count: 3
+                },
+                tenure_type: "REGULAR",
+                sequence: 1,
+                total_cycles: 0,
+                pricing_scheme: {
+                  fixed_price: {
+                    value: "7.99",
+                    currency_code: "USD"
+                  }
+                }
+              }
+            ],
+            payment_preferences: {
+              auto_bill_outstanding: true,
+              setup_fee: {
+                value: "0",
+                currency_code: "USD"
+              },
+              setup_fee_failure_action: "CONTINUE",
+              payment_failure_threshold: 3
+            }
+          }),
+        });
+
+        if (!quarterlyRes.ok) {
+          throw new Error(`PayPal quarterly plan creation failed: ${await quarterlyRes.text()}`);
+        }
+
+        const quarterlyData = await quarterlyRes.json();
+        const quarterlyPlanId = quarterlyData.id;
+        console.log(`[PayPal] Successfully created Quarterly Plan: ${quarterlyPlanId}`);
+
+        // Save new plan details in Firestore
+        try {
+          await db.collection("config").doc("paypal_v3").set({
+            paypalPlanMonthly: monthlyPlanId,
+            paypalPlanQuarterly: quarterlyPlanId,
+            productId: productId,
+            createdAt: new Date().toISOString()
+          });
+          console.log("[PayPal] Saved newly created plan IDs to Firestore cache.");
+        } catch (fsErr) {
+          console.warn("[PayPal] Failed to write plan IDs to Firestore cache (falling back to memory-only):", fsErr);
+        }
+
+        return {
+          monthlyPlanId,
+          quarterlyPlanId,
+        };
+      } catch (err) {
+        console.error("[PayPal] Error creating dynamic products/plans:", err);
+        // Reset promise on error so that we can retry
+        paypalCachePromise = null;
+        return null;
+      }
+    })();
+  }
+  return paypalCachePromise;
+}
+
 // 1. Fetch public payment config (Secrets are safe on backend, client IDs exposed securely)
-app.get("/api/payment/config", (req, res) => {
+app.get("/api/payment/config", async (req, res) => {
   const { keyId, keySecret } = getRazorpayCredentials();
   const finalRazorpayKeyId = keyId || "";
   const hasRazorpayConfigured = !!finalRazorpayKeyId && !!keySecret;
 
   const finalPaypalClientId = process.env.PAYPAL_CLIENT_ID || process.env.VITE_PAYPAL_CLIENT_ID || "";
   const hasPaypalConfigured = !!finalPaypalClientId && !!process.env.PAYPAL_CLIENT_SECRET;
+  const apiUrl = process.env.PAYPAL_API_URL || "https://api-m.sandbox.paypal.com";
 
-  const paypalPlanMonthly = process.env.PAYPAL_PLAN_MONTHLY || "P-59199343B03893339MZVLUOI";
-  const paypalPlanQuarterly = process.env.PAYPAL_PLAN_QUARTERLY || "P-302302384920239084920233";
+  let paypalPlanMonthly = process.env.PAYPAL_PLAN_MONTHLY || "P-59199343B03893339MZVLUOI";
+  let paypalPlanQuarterly = process.env.PAYPAL_PLAN_QUARTERLY || "P-302302384920239084920233";
+
+  if (hasPaypalConfigured) {
+    try {
+      const dynamicPlans = await getOrCreatePaypalPlans(apiUrl, finalPaypalClientId, process.env.PAYPAL_CLIENT_SECRET!);
+      if (dynamicPlans) {
+        paypalPlanMonthly = dynamicPlans.monthlyPlanId;
+        paypalPlanQuarterly = dynamicPlans.quarterlyPlanId;
+      }
+    } catch (err) {
+      console.error("[PayPal] Failed to dynamically get or create active billing plans:", err);
+    }
+  }
 
   res.json({
     razorpayKeyId: finalRazorpayKeyId,
@@ -672,6 +1083,28 @@ app.post("/api/razorpay/verify-payment", authenticateFirebaseUser, async (req: a
       return res.status(400).json({ error: "Payment verification failed. Invalid transaction signature." });
     }
 
+    console.log(`[Razorpay] Cryptographic signature matches. Checking for duplicate payment: ${paymentId}`);
+    // Prevent duplicate processing or ID reuse
+    const paymentDoc = await db.collection("payments").doc(paymentId).get();
+    if (paymentDoc.exists) {
+      const paymentData = paymentDoc.data();
+      if (paymentData?.userId !== freelancerId) {
+        console.warn(`[Razorpay] Attempt to reuse payment ID: ${paymentId} by different user: ${freelancerId} (owned by ${paymentData?.userId})`);
+        return res.status(400).json({
+          success: false,
+          error: "Unauthorized: This payment is already claimed by another user.",
+        });
+      }
+      
+      console.log(`[Razorpay] Payment ${paymentId} already processed for user ${freelancerId}. Returning existing profile.`);
+      const profile = await getFreelancerProfile(freelancerId);
+      return res.json({
+        success: true,
+        profile,
+        duplicate: true,
+      });
+    }
+
     console.log(`[Razorpay] Signature verified successfully! Activating Pro subscription for: ${freelancerId}`);
     const updatedProfile = await activateProSubscription(
       freelancerId,
@@ -700,17 +1133,28 @@ app.post("/api/razorpay/verify-payment", authenticateFirebaseUser, async (req: a
     });
   } catch (err: any) {
     console.error("[Razorpay] Payment Verification Exception:", err);
-    res.status(500).json({ error: err.message || "Failed to verify Razorpay payment" });
+    res.status(500).json({ 
+      success: false, 
+      error: err.message || "Failed to verify Razorpay payment",
+      isPending: true 
+    });
   }
 });
 
 // 4. PayPal Subscription verification and activation (SERVER SIDE)
 app.post("/api/paypal/verify-subscription", authenticateFirebaseUser, async (req: any, res) => {
+  console.log("[PayPal] Received subscription verification request:", {
+    subscriptionId: req.body.subscriptionId,
+    planId: req.body.planId,
+    freelancerId: req.userId,
+  });
+
   try {
     const { planId, subscriptionId } = req.body;
     const freelancerId = req.userId;
 
     if (!freelancerId || !planId || !subscriptionId) {
+      console.warn("[PayPal] Verification rejected: Missing parameters.");
       return res.status(400).json({ error: "Missing required subscription parameters." });
     }
 
@@ -719,10 +1163,12 @@ app.post("/api/paypal/verify-subscription", authenticateFirebaseUser, async (req
     const apiUrl = process.env.PAYPAL_API_URL || "https://api-m.sandbox.paypal.com";
 
     if (!clientId || !clientSecret) {
+      console.error("[PayPal] Verification failed: PayPal credentials not configured on the server.");
       return res.status(550).json({ error: "PayPal credentials are not configured on the server." });
     }
 
     // Authenticate with PayPal
+    console.log("[PayPal] Authenticating with PayPal API...");
     const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
     const tokenRes = await fetch(`${apiUrl}/v1/oauth2/token`, {
       method: "POST",
@@ -741,6 +1187,7 @@ app.post("/api/paypal/verify-subscription", authenticateFirebaseUser, async (req
     const accessToken = tokenData.access_token;
 
     // Fetch Subscription Status from PayPal Subscriptions API
+    console.log(`[PayPal] Retrieving status for subscription: ${subscriptionId}`);
     const subRes = await fetch(`${apiUrl}/v1/billing/subscriptions/${subscriptionId}`, {
       headers: {
         "Authorization": `Bearer ${accessToken}`,
@@ -754,10 +1201,12 @@ app.post("/api/paypal/verify-subscription", authenticateFirebaseUser, async (req
 
     const subData = await subRes.json();
     const status = subData.status; // ACTIVE, APPROVED, etc.
+    console.log(`[PayPal] Subscription status from PayPal is: ${status}`);
 
     // 1. Verify custom_id to prevent account hijacking / ID reusing
     const customId = subData.custom_id || "";
     if (!customId || !customId.startsWith(`${freelancerId}:`)) {
+      console.warn(`[PayPal] Unauthorized: Custom ID '${customId}' does not match user: ${freelancerId}`);
       return res.status(400).json({
         success: false,
         error: "Unauthorized: This subscription ID is not associated with your user account.",
@@ -765,10 +1214,12 @@ app.post("/api/paypal/verify-subscription", authenticateFirebaseUser, async (req
     }
 
     // 2. Prevent duplicate processing or ID reuse
+    console.log(`[PayPal] Checking for duplicate transaction for subscription ID: ${subscriptionId}`);
     const paymentDoc = await db.collection("payments").doc(subscriptionId).get();
     if (paymentDoc.exists) {
       const paymentData = paymentDoc.data();
       if (paymentData?.userId !== freelancerId) {
+        console.warn(`[PayPal] Attempt to reuse subscription ID: ${subscriptionId} by different user: ${freelancerId} (owned by ${paymentData?.userId})`);
         return res.status(400).json({
           success: false,
           error: "Unauthorized: This subscription is already claimed by another user.",
@@ -785,7 +1236,7 @@ app.post("/api/paypal/verify-subscription", authenticateFirebaseUser, async (req
     }
 
     if (status === "ACTIVE" || status === "APPROVED") {
-      console.log(`[PayPal] Subscription ${subscriptionId} verified successfully with status ${status}`);
+      console.log(`[PayPal] Subscription ${subscriptionId} verified successfully with status ${status}. Activating Pro...`);
       
       const updatedProfile = await activateProSubscription(
         freelancerId,
@@ -810,14 +1261,12 @@ app.post("/api/paypal/verify-subscription", authenticateFirebaseUser, async (req
       });
     }
   } catch (err: any) {
-    console.error("PayPal Subscription verification error:", err);
-    // Explicitly keep on Free if we encounter error
-    try {
-      if (req.userId) {
-        await cancelOrExpireProSubscription(req.userId, "PayPal", "expired", req.body.subscriptionId);
-      }
-    } catch (ignore) {}
-    res.status(500).json({ error: err.message || "Failed to verify PayPal subscription" });
+    console.error("[PayPal] Subscription verification error:", err);
+    res.status(500).json({ 
+      success: false, 
+      error: err.message || "Failed to verify PayPal subscription",
+      isPending: true 
+    });
   }
 });
 
@@ -971,7 +1420,7 @@ app.post("/api/paypal/create-order", authenticateFirebaseUser, async (req: any, 
       return res.status(400).json({ error: "Missing parameters" });
     }
     const isQuarterly = planName === "3 Months" || planName === "quarterly";
-    const amount = isQuarterly ? "11.99" : "4.99";
+    const amount = isQuarterly ? "7.99" : "2.99";
 
     const clientId = process.env.VITE_PAYPAL_CLIENT_ID || process.env.PAYPAL_CLIENT_ID;
     const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
