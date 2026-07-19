@@ -907,9 +907,34 @@ function getRazorpayCredentials() {
 
 // Dynamic PayPal product and billing plan auto-provisioning to avoid RESOURCE_NOT_FOUND (INVALID_RESOURCE_ID)
 let paypalCachePromise: Promise<{ monthlyPlanId: string, quarterlyPlanId: string } | null> | null = null;
+let lastPaypalAttemptTime = 0;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  let timeoutId: any;
+  const timeoutPromise = new Promise<T>((resolve) => {
+    timeoutId = setTimeout(() => {
+      console.warn(`[Timeout] Promise timed out after ${ms}ms. Returning fallback.`);
+      resolve(fallback);
+    }, ms);
+  });
+  return Promise.race([
+    promise.then((val) => {
+      clearTimeout(timeoutId);
+      return val;
+    }),
+    timeoutPromise
+  ]);
+}
 
 async function getOrCreatePaypalPlans(apiUrl: string, clientId: string, clientSecret: string) {
+  const now = Date.now();
   if (!paypalCachePromise) {
+    if (now - lastPaypalAttemptTime < 60000) {
+      console.log("[PayPal] Throttling dynamic plan creation attempts to avoid blocking the server.");
+      return null;
+    }
+    lastPaypalAttemptTime = now;
+
     paypalCachePromise = (async () => {
       // 1. Try to read cached plans from Firestore first
       try {
@@ -1120,7 +1145,11 @@ app.get("/api/payment/config", async (req, res) => {
 
   if (hasPaypalConfigured) {
     try {
-      const dynamicPlans = await getOrCreatePaypalPlans(apiUrl, finalPaypalClientId, process.env.PAYPAL_CLIENT_SECRET!);
+      const dynamicPlans = await withTimeout(
+        getOrCreatePaypalPlans(apiUrl, finalPaypalClientId, process.env.PAYPAL_CLIENT_SECRET!),
+        1500,
+        null
+      );
       if (dynamicPlans) {
         paypalPlanMonthly = dynamicPlans.monthlyPlanId;
         paypalPlanQuarterly = dynamicPlans.quarterlyPlanId;
