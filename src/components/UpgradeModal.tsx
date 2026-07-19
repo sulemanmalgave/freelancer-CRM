@@ -396,13 +396,22 @@ export default function UpgradeModal({
                 ? paymentConfig.paypalPlanQuarterly 
                 : paymentConfig.paypalPlanMonthly;
               
-              console.log(`[PayPal] Initiating subscription for plan: ${targetPlanId}`);
+              const customId = `${profile.id}:${selectedPlan === "3 Months" ? "quarterly" : "monthly"}`;
+              console.log(`[PayPal SDK] Initiating subscription. Plan ID: ${targetPlanId}, Custom ID: ${customId}`);
+              
               return actions.subscription.create({
                 plan_id: targetPlanId,
-                custom_id: `${profile.id}:${selectedPlan === "3 Months" ? "quarterly" : "monthly"}`
+                custom_id: customId
+              }).then((subId: string) => {
+                console.log(`[PayPal SDK] Subscription created successfully. Subscription ID: ${subId}`);
+                return subId;
+              }).catch((err: any) => {
+                console.error("[PayPal SDK] Error during actions.subscription.create:", err);
+                throw err;
               });
             },
             onApprove: async (data: any) => {
+              console.log("[PayPal SDK onApprove] Callback triggered. Event Payload:", JSON.stringify(data, null, 2));
               setPurchaseStage("processing");
               setLogs([
                 `[PayPal] Subscription Approved! ID: ${data.subscriptionID}`,
@@ -420,6 +429,7 @@ export default function UpgradeModal({
               
               try {
                 const authHeader = await getAuthHeader();
+                console.log(`[PayPal] Verification request payload:`, JSON.stringify(pendingPayPal, null, 2));
                 const res = await fetch("/api/paypal/verify-subscription", {
                   method: "POST",
                   headers: { 
@@ -434,6 +444,8 @@ export default function UpgradeModal({
                 });
                 
                 const verifyResult = await res.json();
+                console.log("[PayPal] Backend verification API response received:", JSON.stringify(verifyResult, null, 2));
+
                 if (verifyResult.success) {
                   setLogs((prev) => [...prev, "[PayPal] Subscription verified cryptographically! Provisioning active entitlements..."]);
                   removePendingVerification(pendingPayPal);
@@ -444,24 +456,82 @@ export default function UpgradeModal({
                   onUpgradeSuccess("Pro" as any, verifyResult.profile || profile);
                   setPurchaseStage("success");
                 } else {
-                  throw new Error(verifyResult.error || "Subscription activation verification rejected.");
+                  // Subscription explicitly declined/rejected by PayPal API or backend verification
+                  removePendingVerification(pendingPayPal);
+                  setPaymentError(verifyResult.error || "Subscription activation was refused by the billing system.");
+                  setPurchaseStage("failed");
                 }
               } catch (err: any) {
-                console.error("PayPal Subscription verification Error:", err);
-                // Since it failed but we have it in pending verification, let's treat it as pending success
-                setLogs((prev) => [...prev, "[PayPal] Verification timed out, but your transaction is recorded. Activating in background, please do not pay again!"]);
-                onUpgradeSuccess("Pro" as any, profile);
-                setPurchaseStage("success");
+                console.error("PayPal Subscription verification Exception:", err);
+                setLogs((prev) => [...prev, "[PayPal] Network error connecting to billing verification server. Retrying verification in background..."]);
+                setPaymentError(err.message || "Network connection error. Please contact support to verify your billing agreement.");
+                setPurchaseStage("failed");
               }
             },
             onCancel: (data: any) => {
-              console.log("[PayPal] Subscription checkout was cancelled", data);
+              console.log("[PayPal SDK onCancel] Subscription checkout was cancelled:", JSON.stringify(data, null, 2));
               setPaymentError("PayPal subscription checkout was cancelled.");
               setPurchaseStage("plans");
             },
             onError: (err: any) => {
-              console.error("PayPal Subscription error:", err);
-              setPaymentError("PayPal Subscription process was cancelled or refused by issuing network.");
+              console.error("[PayPal SDK onError] General/Decline Error encountered:", err);
+              
+              let errorMsg = "PayPal Subscription process was cancelled or refused by issuing network.";
+              if (err) {
+                let detailsStr = "";
+                let debugId = "";
+                let errorName = "";
+                let issue = "";
+                
+                if (typeof err === "object") {
+                  errorName = err.name || err.code || "";
+                  detailsStr = err.message || "";
+                  debugId = err.debug_id || err.debugId || "";
+                  
+                  if (err.details && Array.isArray(err.details)) {
+                    detailsStr += " - Details: " + err.details.map((d: any) => {
+                      return `${d.issue || ""}: ${d.description || ""} (${d.field || ""})`;
+                    }).join("; ");
+                  } else if (err.details && typeof err.details === "object") {
+                    detailsStr += " - Details: " + JSON.stringify(err.details);
+                  }
+                  
+                  if (err.issue) {
+                    issue = err.issue;
+                  }
+                } else if (typeof err === "string") {
+                  detailsStr = err;
+                }
+                
+                let contextualHelp = "";
+                const fullErrText = `${errorName} ${detailsStr} ${issue}`.toUpperCase();
+                
+                if (fullErrText.includes("TRANSACTION_DECLINED")) {
+                  contextualHelp = " [Reason: The transaction was declined. Your bank or card issuer refused authorization. Please check your card balance, limits, or contact your bank.]";
+                } else if (fullErrText.includes("INSTRUMENT_DECLINED") || fullErrText.includes("PAYMENT_DENIED")) {
+                  contextualHelp = " [Reason: The payment method was declined by PayPal or your bank. Please use a different card or add a funding source to your PayPal wallet.]";
+                } else if (fullErrText.includes("FUNDING_SOURCE_NOT_AVAILABLE") || fullErrText.includes("FUNDING_SOURCE_NOT_ELIGIBLE")) {
+                  contextualHelp = " [Reason: Your selected funding source is ineligible for automatic recurring payments. PayPal subscriptions require a credit card, debit card, or linked bank account that supports international automated billing.]";
+                } else if (fullErrText.includes("CURRENCY_NOT_SUPPORTED") || fullErrText.includes("CURRENCY_MISMATCH")) {
+                  contextualHelp = " [Reason: Currency restriction. The subscription is set in USD, but your funding source or account country does not support automatic USD billing.]";
+                } else if (fullErrText.includes("BILLING_AGREEMENT_NOT_FOUND") || fullErrText.includes("INVALID_RESOURCE_ID")) {
+                  contextualHelp = " [Reason: The PayPal subscription Plan ID is invalid, inactive, or belongs to a different developer sandbox environment. Please notify support.]";
+                } else if (fullErrText.includes("COUNTRY_NOT_SUPPORTED") || fullErrText.includes("RESTRICTED_MEMBER")) {
+                  contextualHelp = " [Reason: PayPal country or regulatory restrictions are preventing recurring subscriptions for this merchant/buyer pair.]";
+                } else if (fullErrText.includes("USER_ACTION_REQUIRED") || fullErrText.includes("COMPLIANCE_ERROR")) {
+                  contextualHelp = " [Reason: Additional security or compliance actions are required on your PayPal account. Please log into PayPal.com to resolve notifications.]";
+                }
+                
+                errorMsg = `PayPal SDK Error: ${errorName || "Error"} - ${detailsStr || "Process refused"}.${contextualHelp}`;
+                if (debugId) {
+                  errorMsg += ` (Debug ID: ${debugId})`;
+                }
+                if (issue) {
+                  errorMsg += ` [Issue: ${issue}]`;
+                }
+              }
+              
+              setPaymentError(errorMsg);
               setPurchaseStage("failed");
             }
           }).render("#paypal-button-container");

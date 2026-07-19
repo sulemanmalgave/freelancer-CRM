@@ -936,28 +936,10 @@ async function getOrCreatePaypalPlans(apiUrl: string, clientId: string, clientSe
     lastPaypalAttemptTime = now;
 
     paypalCachePromise = (async () => {
-      // 1. Try to read cached plans from Firestore first
+      // 1. Authenticate with PayPal first to ensure credentials work and obtain an access token
+      let accessToken = "";
       try {
-        const configDoc = await db.collection("config").doc("paypal_v3").get();
-        if (configDoc.exists) {
-          const data = configDoc.data();
-          if (data && data.paypalPlanMonthly && data.paypalPlanQuarterly) {
-            console.log("[PayPal] Retrieved active plan IDs from Firestore cache.");
-            return {
-              monthlyPlanId: data.paypalPlanMonthly,
-              quarterlyPlanId: data.paypalPlanQuarterly,
-            };
-          }
-        }
-      } catch (err) {
-        console.warn("[PayPal] Failed to read cached plans from Firestore. Proceeding to fetch/create dynamically...", err);
-      }
-
-      // 2. Fallback to dynamic creation via PayPal REST APIs
-      try {
-        console.log("[PayPal] Creating dynamic product and plans under the configured merchant account...");
-
-        // Authenticate with PayPal
+        console.log(`[PayPal API Request] POST ${apiUrl}/v1/oauth2/token - Initiating authentication with Client ID: ${clientId.substring(0, 10)}...`);
         const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
         const tokenRes = await fetch(`${apiUrl}/v1/oauth2/token`, {
           method: "POST",
@@ -968,15 +950,83 @@ async function getOrCreatePaypalPlans(apiUrl: string, clientId: string, clientSe
           body: "grant_type=client_credentials",
         });
 
+        const debugId = tokenRes.headers.get("paypal-debug-id") || "N/A";
+        console.log(`[PayPal API Response] Auth Status: ${tokenRes.status}, Debug ID: ${debugId}`);
+
         if (!tokenRes.ok) {
-          throw new Error(`PayPal auth failed: ${await tokenRes.text()}`);
+          const errText = await tokenRes.text();
+          console.error(`[PayPal API Error] Authentication failed. Debug ID: ${debugId}. Error Details: ${errText}`);
+          throw new Error(`PayPal auth failed (Debug ID: ${debugId}): ${errText}`);
         }
 
         const tokenData = await tokenRes.json();
-        const accessToken = tokenData.access_token;
+        accessToken = tokenData.access_token;
+        console.log("[PayPal] Authentication successful. Obtained Bearer token.");
+      } catch (authErr: any) {
+        console.error("[PayPal] Exception during PayPal authentication:", authErr);
+        paypalCachePromise = null;
+        return null;
+      }
+
+      // Helper function to verify if a plan ID exists and is active on the current merchant account
+      const verifyPlan = async (planId: string): Promise<boolean> => {
+        try {
+          console.log(`[PayPal API Request] GET ${apiUrl}/v1/billing/plans/${planId} - Verifying plan status...`);
+          const checkRes = await fetch(`${apiUrl}/v1/billing/plans/${planId}`, {
+            headers: {
+              "Authorization": `Bearer ${accessToken}`,
+              "Content-Type": "application/json"
+            }
+          });
+          const debugId = checkRes.headers.get("paypal-debug-id") || "N/A";
+          console.log(`[PayPal API Response] Plan ${planId} Check Status: ${checkRes.status}, Debug ID: ${debugId}`);
+          
+          if (checkRes.ok) {
+            const planDetail = await checkRes.json();
+            console.log(`[PayPal API Plan Info] Plan ${planId} verified. Name: "${planDetail.name}", Status: "${planDetail.status}"`);
+            return planDetail.status === "ACTIVE";
+          }
+          const checkErr = await checkRes.text();
+          console.warn(`[PayPal API Warning] Failed to fetch details for plan ${planId}. Status: ${checkRes.status}. Error: ${checkErr}`);
+          return false;
+        } catch (e: any) {
+          console.error(`[PayPal] Exception occurred while verifying plan ${planId}:`, e);
+          return false;
+        }
+      };
+
+      // 2. Try to read cached plans from Firestore and verify they are still valid/active
+      try {
+        const configDoc = await db.collection("config").doc("paypal_v3").get();
+        if (configDoc.exists) {
+          const data = configDoc.data();
+          if (data && data.paypalPlanMonthly && data.paypalPlanQuarterly) {
+            console.log("[PayPal] Retrieved plan IDs from Firestore cache. Validating them on current PayPal merchant account...");
+            const isMonthlyValid = await verifyPlan(data.paypalPlanMonthly);
+            const isQuarterlyValid = await verifyPlan(data.paypalPlanQuarterly);
+            
+            if (isMonthlyValid && isQuarterlyValid) {
+              console.log("[PayPal] Cache verified! Both Monthly and Quarterly plans are active. Proceeding with cached IDs.");
+              return {
+                monthlyPlanId: data.paypalPlanMonthly,
+                quarterlyPlanId: data.paypalPlanQuarterly,
+              };
+            } else {
+              console.warn("[PayPal] Cached plans are either inactive or belong to a different PayPal account. Generating fresh plans...");
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("[PayPal] Failed to read cached plans from Firestore. Proceeding to fetch/create dynamically...", err);
+      }
+
+      // 3. Fallback to dynamic creation via PayPal REST APIs if cache is missing or invalid
+      try {
+        console.log("[PayPal] Creating dynamic product and plans under the configured merchant account...");
 
         // Create catalog Product
         const requestIdProd = `req-prod-${Date.now()}`;
+        console.log(`[PayPal API Request] POST ${apiUrl}/v1/catalogs/products (Request-Id: ${requestIdProd})`);
         const productRes = await fetch(`${apiUrl}/v1/catalogs/products`, {
           method: "POST",
           headers: {
@@ -992,16 +1042,22 @@ async function getOrCreatePaypalPlans(apiUrl: string, clientId: string, clientSe
           }),
         });
 
+        const prodDebugId = productRes.headers.get("paypal-debug-id") || "N/A";
+        console.log(`[PayPal API Response] Product Creation Status: ${productRes.status}, Debug ID: ${prodDebugId}`);
+
         if (!productRes.ok) {
-          throw new Error(`PayPal product creation failed: ${await productRes.text()}`);
+          const prodErr = await productRes.text();
+          console.error(`[PayPal API Error] Product creation failed. Debug ID: ${prodDebugId}. Details: ${prodErr}`);
+          throw new Error(`PayPal product creation failed (Debug ID: ${prodDebugId}): ${prodErr}`);
         }
 
         const productData = await productRes.json();
         const productId = productData.id;
-        console.log(`[PayPal] Successfully created product with ID: ${productId}`);
+        console.log(`[PayPal] Successfully created catalog product with ID: ${productId}`);
 
         // Create Pro Monthly Plan ($2.99 / Month)
         const requestIdMonthly = `req-plan-mon-${Date.now()}`;
+        console.log(`[PayPal API Request] POST ${apiUrl}/v1/billing/plans - Creating Pro Monthly Plan (Request-Id: ${requestIdMonthly})`);
         const monthlyRes = await fetch(`${apiUrl}/v1/billing/plans`, {
           method: "POST",
           headers: {
@@ -1043,8 +1099,13 @@ async function getOrCreatePaypalPlans(apiUrl: string, clientId: string, clientSe
           }),
         });
 
+        const monDebugId = monthlyRes.headers.get("paypal-debug-id") || "N/A";
+        console.log(`[PayPal API Response] Monthly Plan Creation Status: ${monthlyRes.status}, Debug ID: ${monDebugId}`);
+
         if (!monthlyRes.ok) {
-          throw new Error(`PayPal monthly plan creation failed: ${await monthlyRes.text()}`);
+          const monErr = await monthlyRes.text();
+          console.error(`[PayPal API Error] Monthly plan creation failed. Debug ID: ${monDebugId}. Details: ${monErr}`);
+          throw new Error(`PayPal monthly plan creation failed (Debug ID: ${monDebugId}): ${monErr}`);
         }
 
         const monthlyData = await monthlyRes.json();
@@ -1053,6 +1114,7 @@ async function getOrCreatePaypalPlans(apiUrl: string, clientId: string, clientSe
 
         // Create Pro Quarterly Plan ($7.99 / 3 Months)
         const requestIdQuarterly = `req-plan-qtr-${Date.now()}`;
+        console.log(`[PayPal API Request] POST ${apiUrl}/v1/billing/plans - Creating Pro Quarterly Plan (Request-Id: ${requestIdQuarterly})`);
         const quarterlyRes = await fetch(`${apiUrl}/v1/billing/plans`, {
           method: "POST",
           headers: {
@@ -1094,8 +1156,13 @@ async function getOrCreatePaypalPlans(apiUrl: string, clientId: string, clientSe
           }),
         });
 
+        const qtrDebugId = quarterlyRes.headers.get("paypal-debug-id") || "N/A";
+        console.log(`[PayPal API Response] Quarterly Plan Creation Status: ${quarterlyRes.status}, Debug ID: ${qtrDebugId}`);
+
         if (!quarterlyRes.ok) {
-          throw new Error(`PayPal quarterly plan creation failed: ${await quarterlyRes.text()}`);
+          const qtrErr = await quarterlyRes.text();
+          console.error(`[PayPal API Error] Quarterly plan creation failed. Debug ID: ${qtrDebugId}. Details: ${qtrErr}`);
+          throw new Error(`PayPal quarterly plan creation failed (Debug ID: ${qtrDebugId}): ${qtrErr}`);
         }
 
         const quarterlyData = await quarterlyRes.json();
@@ -1110,7 +1177,7 @@ async function getOrCreatePaypalPlans(apiUrl: string, clientId: string, clientSe
             productId: productId,
             createdAt: new Date().toISOString()
           });
-          console.log("[PayPal] Saved newly created plan IDs to Firestore cache.");
+          console.log("[PayPal] Saved newly created and verified plan IDs to Firestore cache.");
         } catch (fsErr) {
           console.warn("[PayPal] Failed to write plan IDs to Firestore cache (falling back to memory-only):", fsErr);
         }
@@ -1380,7 +1447,7 @@ app.post("/api/paypal/verify-subscription", authenticateFirebaseUser, async (req
     }
 
     // Authenticate with PayPal
-    console.log("[PayPal] Authenticating with PayPal API...");
+    console.log(`[PayPal Request] POST ${apiUrl}/v1/oauth2/token - Authenticating with Client ID: ${clientId.substring(0, 10)}...`);
     const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
     const tokenRes = await fetch(`${apiUrl}/v1/oauth2/token`, {
       method: "POST",
@@ -1391,15 +1458,20 @@ app.post("/api/paypal/verify-subscription", authenticateFirebaseUser, async (req
       body: "grant_type=client_credentials",
     });
 
+    const tokenDebugId = tokenRes.headers.get("paypal-debug-id") || "N/A";
+    console.log(`[PayPal Response] Auth Status: ${tokenRes.status}, Debug ID: ${tokenDebugId}`);
+
     if (!tokenRes.ok) {
-      throw new Error(`Failed to authenticate with PayPal API: ${await tokenRes.text()}`);
+      const tokenErrText = await tokenRes.text();
+      console.error(`[PayPal Error] Auth failed. Status: ${tokenRes.status}, Debug ID: ${tokenDebugId}, Error: ${tokenErrText}`);
+      throw new Error(`Failed to authenticate with PayPal API (Debug ID: ${tokenDebugId}): ${tokenErrText}`);
     }
 
     const tokenData = await tokenRes.json();
     const accessToken = tokenData.access_token;
 
     // Fetch Subscription Status from PayPal Subscriptions API
-    console.log(`[PayPal] Retrieving status for subscription: ${subscriptionId}`);
+    console.log(`[PayPal Request] GET ${apiUrl}/v1/billing/subscriptions/${subscriptionId}`);
     const subRes = await fetch(`${apiUrl}/v1/billing/subscriptions/${subscriptionId}`, {
       headers: {
         "Authorization": `Bearer ${accessToken}`,
@@ -1407,18 +1479,48 @@ app.post("/api/paypal/verify-subscription", authenticateFirebaseUser, async (req
       },
     });
 
+    const subDebugId = subRes.headers.get("paypal-debug-id") || "N/A";
+    console.log(`[PayPal Response] GET Sub Status: ${subRes.status}, Debug ID: ${subDebugId}`);
+
     if (!subRes.ok) {
-      throw new Error(`Failed to retrieve PayPal subscription ${subscriptionId}: ${await subRes.text()}`);
+      const subErrText = await subRes.text();
+      console.error(`[PayPal Error] Failed to retrieve subscription details. Status: ${subRes.status}, Debug ID: ${subDebugId}, Body: ${subErrText}`);
+      throw new Error(`Failed to retrieve PayPal subscription ${subscriptionId} (Debug ID: ${subDebugId}): ${subErrText}`);
     }
 
     const subData = await subRes.json();
-    const status = subData.status; // ACTIVE, APPROVED, etc.
-    console.log(`[PayPal] Subscription status from PayPal is: ${status}`);
+    console.log(`[PayPal Response Data] Sub ${subscriptionId} Payload:`, JSON.stringify(subData, null, 2));
+
+    const status = subData.status; // ACTIVE, APPROVED, APPROVAL_PENDING, SUSPENDED, CANCELLED, EXPIRED
+    console.log(`[PayPal] Parsed subscription state: "${status}" for ID: ${subscriptionId}`);
+
+    // Verify approval URL (Task 5)
+    const approveLink = subData.links?.find((l: any) => l.rel === "approve")?.href || "";
+    console.log(`[PayPal Verification] Subscription approve/approval URL is: "${approveLink}"`);
+
+    // Extract potential failed payment reasons (Tasks 2, 9, 10, 11)
+    let failedReason = "";
+    if (subData.billing_info) {
+      const bInfo = subData.billing_info;
+      console.log(`[PayPal Billing Info] Failed payments count: ${bInfo.failed_payments_count || 0}`);
+      
+      if (bInfo.last_failed_payment) {
+        const lfp = bInfo.last_failed_payment;
+        failedReason = `Last payment failed with reason: ${lfp.reason_code || "UNKNOWN_DECLINE"}`;
+        if (lfp.amount) {
+          failedReason += ` (Amount: ${lfp.amount.value} ${lfp.amount.currency_code})`;
+        }
+        if (lfp.time) {
+          failedReason += ` at ${lfp.time}`;
+        }
+        console.warn(`[PayPal Failed Payment Alert] ${failedReason}`);
+      }
+    }
 
     // 1. Verify custom_id to prevent account hijacking / ID reusing
     const customId = subData.custom_id || "";
     if (!customId || !customId.startsWith(`${freelancerId}:`)) {
-      console.warn(`[PayPal] Unauthorized: Custom ID '${customId}' does not match user: ${freelancerId}`);
+      console.warn(`[PayPal Security Violation] Custom ID '${customId}' does not match authenticated user: ${freelancerId}`);
       return res.status(400).json({
         success: false,
         error: "Unauthorized: This subscription ID is not associated with your user account.",
@@ -1426,19 +1528,19 @@ app.post("/api/paypal/verify-subscription", authenticateFirebaseUser, async (req
     }
 
     // 2. Prevent duplicate processing or ID reuse
-    console.log(`[PayPal] Checking for duplicate transaction for subscription ID: ${subscriptionId}`);
+    console.log(`[PayPal] Checking database for duplicate transaction with ID: ${subscriptionId}`);
     const paymentDoc = await db.collection("payments").doc(subscriptionId).get();
     if (paymentDoc.exists) {
       const paymentData = paymentDoc.data();
       if (paymentData?.userId !== freelancerId) {
-        console.warn(`[PayPal] Attempt to reuse subscription ID: ${subscriptionId} by different user: ${freelancerId} (owned by ${paymentData?.userId})`);
+        console.warn(`[PayPal Security Violation] Attempt to claim already processed subscription ID: ${subscriptionId} by different user: ${freelancerId} (originally owned by ${paymentData?.userId})`);
         return res.status(400).json({
           success: false,
           error: "Unauthorized: This subscription is already claimed by another user.",
         });
       }
       
-      console.log(`[PayPal] Subscription ${subscriptionId} already processed for user ${freelancerId}. Returning existing profile.`);
+      console.log(`[PayPal] Subscription ${subscriptionId} already processed. Returning cached profile for user ${freelancerId}`);
       const profile = await getFreelancerProfile(freelancerId);
       return res.json({
         success: true,
@@ -1447,8 +1549,10 @@ app.post("/api/paypal/verify-subscription", authenticateFirebaseUser, async (req
       });
     }
 
-    if (status === "ACTIVE" || status === "APPROVED") {
-      console.log(`[PayPal] Subscription ${subscriptionId} verified successfully with status ${status}. Activating Pro...`);
+    // 3. Strict Pro Subscription Activation (Task 7)
+    // Only activate the Pro state in the database if PayPal has officially set the status to "ACTIVE".
+    if (status === "ACTIVE") {
+      console.log(`[PayPal Verification Successful] Subscription ${subscriptionId} is confirmed ACTIVE. Activating Pro for user: ${freelancerId}`);
       
       const updatedProfile = await activateProSubscription(
         freelancerId,
@@ -1462,22 +1566,42 @@ app.post("/api/paypal/verify-subscription", authenticateFirebaseUser, async (req
         success: true,
         profile: updatedProfile,
       });
+    } else if (status === "APPROVED") {
+      // User approved but payment processing is still pending. We must return success: false, but flag isPending: true.
+      console.warn(`[PayPal Pending Activation] Subscription ${subscriptionId} is APPROVED by user, but payment capture is pending on PayPal.`);
+      const profile = await getFreelancerProfile(freelancerId);
+      return res.status(202).json({
+        success: false,
+        isPending: true,
+        error: "Your subscription was approved, but PayPal is still processing the initial payment. Your premium features will activate shortly.",
+        profile,
+      });
     } else {
-      console.warn(`[PayPal] Subscription ${subscriptionId} verification failed with status: ${status}. Keeping user on Free.`);
+      // For any other status (APPROVAL_PENDING, SUSPENDED, CANCELLED, EXPIRED)
+      let displayError = `PayPal subscription is not active. Status: ${status}.`;
+      if (failedReason) {
+        displayError += ` Decline Details: ${failedReason}.`;
+      } else {
+        displayError += " Please complete your payment in the checkout window or try a different card.";
+      }
+      
+      console.warn(`[PayPal Verification Failure] Subscription ${subscriptionId} rejected. Status: ${status}, Reason: ${failedReason || "None specified"}`);
       await cancelOrExpireProSubscription(freelancerId, "PayPal", "expired", subscriptionId);
       const updatedProfile = await getFreelancerProfile(freelancerId);
+      
       return res.status(400).json({
         success: false,
         profile: updatedProfile,
-        error: `PayPal subscription status is not active (current status: ${status})`,
+        error: displayError,
+        debugId: subDebugId
       });
     }
   } catch (err: any) {
     console.error("[PayPal] Subscription verification error:", err);
     res.status(500).json({ 
       success: false, 
-      error: err.message || "Failed to verify PayPal subscription",
-      isPending: true 
+      error: err.message || "An error occurred while verifying your PayPal subscription.",
+      isPending: true
     });
   }
 });
@@ -1584,7 +1708,9 @@ app.post("/api/paypal/webhook", async (req, res) => {
       [userId, planId] = customId.split(":");
     }
 
-    if (eventType === "BILLING.SUBSCRIPTION.ACTIVATED" || eventType === "PAYMENT.SALE.COMPLETED") {
+    if (eventType === "BILLING.SUBSCRIPTION.CREATED") {
+      console.log(`[PayPal Webhook] Subscription CREATED on PayPal: ${subscriptionId} for user ${userId}. Status is pending buyer approval.`);
+    } else if (eventType === "BILLING.SUBSCRIPTION.ACTIVATED" || eventType === "PAYMENT.SALE.COMPLETED") {
       if (userId) {
         await activateProSubscription(
           userId,
@@ -1593,26 +1719,31 @@ app.post("/api/paypal/webhook", async (req, res) => {
           subscriptionId,
           "Other"
         );
-        console.log(`[PayPal Webhook] Subscription activated / payment captured: ${userId}`);
+        console.log(`[PayPal Webhook] Subscription ACTIVATED / payment captured for user: ${userId}, Subscription ID: ${subscriptionId}`);
       }
     } else if (
       eventType === "BILLING.SUBSCRIPTION.CANCELLED" ||
       eventType === "BILLING.SUBSCRIPTION.SUSPENDED" ||
-      eventType === "BILLING.SUBSCRIPTION.EXPIRED"
+      eventType === "BILLING.SUBSCRIPTION.EXPIRED" ||
+      eventType === "BILLING.SUBSCRIPTION.PAYMENT.FAILED" ||
+      eventType === "PAYMENT.FAILED"
     ) {
       if (userId) {
         const statusMap: any = {
           "BILLING.SUBSCRIPTION.CANCELLED": "cancelled",
           "BILLING.SUBSCRIPTION.SUSPENDED": "suspended",
-          "BILLING.SUBSCRIPTION.EXPIRED": "expired"
+          "BILLING.SUBSCRIPTION.EXPIRED": "expired",
+          "BILLING.SUBSCRIPTION.PAYMENT.FAILED": "payment_failed",
+          "PAYMENT.FAILED": "payment_failed"
         };
+        const mappedStatus = statusMap[eventType] || "cancelled";
         await cancelOrExpireProSubscription(
           userId,
           "PayPal",
-          statusMap[eventType],
+          mappedStatus,
           subscriptionId
         );
-        console.log(`[PayPal Webhook] Subscription state ${eventType} parsed for user: ${userId}`);
+        console.log(`[PayPal Webhook] Subscription state updated to '${mappedStatus}' due to '${eventType}' for user: ${userId}, Subscription ID: ${subscriptionId}`);
       }
     }
 
