@@ -520,6 +520,8 @@ export default function UpgradeModal({
                   contextualHelp = " [Reason: PayPal country or regulatory restrictions are preventing recurring subscriptions for this merchant/buyer pair.]";
                 } else if (fullErrText.includes("USER_ACTION_REQUIRED") || fullErrText.includes("COMPLIANCE_ERROR")) {
                   contextualHelp = " [Reason: Additional security or compliance actions are required on your PayPal account. Please log into PayPal.com to resolve notifications.]";
+                } else if (fullErrText.includes("PAYEE_ACCOUNT_RESTRICTED") || fullErrText.includes("PAYEE_ACCOUNT_LOCKED")) {
+                  contextualHelp = " [Reason: The merchant's PayPal account (Payee) is restricted or has compliance limitations. If using sandbox, please verify your sandbox merchant/business account status in the PayPal Developer Dashboard and ensure its email address is verified.]";
                 }
                 
                 errorMsg = `PayPal SDK Error: ${errorName || "Error"} - ${detailsStr || "Process refused"}.${contextualHelp}`;

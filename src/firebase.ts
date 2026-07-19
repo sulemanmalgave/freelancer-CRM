@@ -19,7 +19,8 @@ const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 // Initialize Firestore targeting the custom databaseId with experimentalForceLongPolling enabled
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
-}, databaseId);
+  useFetchStreams: false,
+} as any, databaseId);
 
 // Export Firebase Auth
 export const auth = getAuth(app);
