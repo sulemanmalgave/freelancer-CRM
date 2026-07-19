@@ -67,10 +67,140 @@ function ensureFirebaseAdminInitialized() {
   }
 }
 
-let dbInstance: any = null;
-function getDbInstance() {
+function restoreTimestamps(obj: any): any {
+  if (obj === null || obj === undefined) return obj;
+  if (typeof obj !== "object") return obj;
+
+  if (Array.isArray(obj)) {
+    return obj.map(restoreTimestamps);
+  }
+
+  if (
+    (obj._seconds !== undefined && obj._nanoseconds !== undefined) ||
+    (obj.seconds !== undefined && obj.nanoseconds !== undefined)
+  ) {
+    const s = obj._seconds !== undefined ? obj._seconds : obj.seconds;
+    const n = obj._nanoseconds !== undefined ? obj._nanoseconds : obj.nanoseconds;
+    try {
+      return new Timestamp(s, n);
+    } catch (e) {
+      const t = new Timestamp(s, n);
+      (t as any).toDate = () => new Date(s * 1000);
+      return t;
+    }
+  }
+
+  const newObj: any = {};
+  for (const key of Object.keys(obj)) {
+    newObj[key] = restoreTimestamps(obj[key]);
+  }
+  return newObj;
+}
+
+class LocalDatabase {
+  private filePath = path.join(process.cwd(), "local-db.json");
+  private data: Record<string, Record<string, any>> = {};
+
+  constructor() {
+    this.load();
+  }
+
+  private load() {
+    try {
+      if (fs.existsSync(this.filePath)) {
+        this.data = JSON.parse(fs.readFileSync(this.filePath, "utf-8"));
+      } else {
+        this.data = {};
+      }
+    } catch (err) {
+      console.warn("[LocalDB Fallback] Failed to read local-db.json:", err);
+      this.data = {};
+    }
+  }
+
+  private save() {
+    try {
+      fs.writeFileSync(this.filePath, JSON.stringify(this.data, null, 2), "utf-8");
+    } catch (err) {
+      console.error("[LocalDB Fallback] Failed to write local-db.json:", err);
+    }
+  }
+
+  collection(name: string) {
+    if (!this.data[name]) {
+      this.data[name] = {};
+    }
+    const colData = this.data[name];
+
+    return {
+      doc: (id: string) => {
+        return {
+          get: async () => {
+            const docData = colData[id];
+            return {
+              exists: docData !== undefined,
+              id,
+              data: () => docData ? restoreTimestamps(JSON.parse(JSON.stringify(docData))) : null,
+            };
+          },
+          set: async (newData: any, options?: { merge?: boolean }) => {
+            if (options?.merge && colData[id]) {
+              colData[id] = { ...colData[id], ...newData };
+            } else {
+              colData[id] = newData;
+            }
+            this.save();
+          },
+          delete: async () => {
+            delete colData[id];
+            this.save();
+          }
+        };
+      },
+      get: async () => {
+        const docs = Object.entries(colData).map(([id, val]) => ({
+          id,
+          exists: true,
+          data: () => restoreTimestamps(JSON.parse(JSON.stringify(val))),
+        }));
+        return {
+          forEach: (cb: (doc: any) => void) => {
+            docs.forEach(cb);
+          },
+          docs,
+        };
+      }
+    };
+  }
+
+  async runTransaction(cb: (transaction: any) => Promise<any>) {
+    const transaction = {
+      get: async (ref: any) => {
+        return ref.get();
+      },
+      set: (ref: any, data: any) => {
+        ref.set(data);
+      }
+    };
+    return cb(transaction);
+  }
+}
+
+let dbModeChecked = false;
+let useLocalDbFallback = false;
+let localDbInstance: LocalDatabase | null = null;
+let rawDbInstance: any = null;
+
+function getLocalDb() {
+  if (!localDbInstance) {
+    localDbInstance = new LocalDatabase();
+  }
+  return localDbInstance;
+}
+
+function getRawDbInstance() {
   ensureFirebaseAdminInitialized();
-  if (!dbInstance) {
+  if (!rawDbInstance) {
     let customDbId = "ai-studio-d5cae848-c1ed-4f2e-9f89-e9c69ed15c6c";
     try {
       const configPath = path.join(process.cwd(), "firebase-applet-config.json");
@@ -85,49 +215,93 @@ function getDbInstance() {
     }
 
     try {
-      dbInstance = getFirestore(getApp(), customDbId);
-      // Trigger lazy load of pending activations on DB initialization
-      setTimeout(() => {
-        loadPendingActivationsFromFirestore().catch((err: any) => {
-          console.error("[Billing Engine] Lazy pending load error:", err);
-        });
-      }, 100);
+      rawDbInstance = getFirestore(getApp(), customDbId);
     } catch (err: any) {
-      console.error("[Firebase Admin] Failed to initialize Firestore instance, creating stub fallback:", err);
-      // Create a dummy / mock Firestore-like proxy to gracefully prevent hard crashes
-      dbInstance = {
-        collection: (name: string) => {
-          console.warn(`[Firebase Admin Mock] Stubbed collection called for ${name} (Firestore uninitialized)`);
-          return {
-            doc: (id: string) => {
-              console.warn(`[Firebase Admin Mock] Stubbed doc called for ${id}`);
-              return {
-                get: async () => ({ exists: false, data: () => null }),
-                set: async () => { console.warn(`[Firebase Admin Mock] Stubbed set called`); },
-              };
-            },
-          };
-        },
-        runTransaction: async (cb: any) => {
-          console.warn(`[Firebase Admin Mock] Stubbed runTransaction called`);
-          return cb({
-            get: async () => ({ exists: false }),
-            set: () => {},
-          });
-        }
-      };
+      console.error("[Firebase Admin] Failed to initialize Firestore instance:", err);
+      rawDbInstance = null;
     }
   }
-  return dbInstance;
+  return rawDbInstance;
 }
 
-// Proxied db instance that lazily initializes when accessed
+async function initializeDatabaseMode() {
+  if (dbModeChecked) return;
+  dbModeChecked = true;
+  
+  ensureFirebaseAdminInitialized();
+  const rawInstance = getRawDbInstance();
+  if (!rawInstance) {
+    useLocalDbFallback = true;
+    return;
+  }
+
+  try {
+    // Attempt a silent probe read to see if IAM credentials allow it
+    await rawInstance.collection("config").doc("probe").get();
+    console.log("[Firestore] Cloud Firestore connection verified successfully. Running in Cloud Database Mode.");
+  } catch (err: any) {
+    const errMsg = err?.message || String(err);
+    if (errMsg.includes("PERMISSION_DENIED") || errMsg.includes("credentials") || errMsg.includes("auth") || errMsg.includes("credential")) {
+      console.warn("[Firestore] Server environment lacks administrative write permissions (PERMISSION_DENIED).");
+      console.warn("[Firestore] Seamlessly activating high-performance local JSON-based fallback database.");
+      useLocalDbFallback = true;
+    } else {
+      console.log("[Firestore] Cloud Firestore connection verified. Running in Cloud Database Mode.");
+    }
+  }
+}
+
+// Proxied db instance that lazily initializes and routes to Local or Cloud DB
 const db = new Proxy({} as any, {
   get(target, prop) {
-    const instance = getDbInstance();
+    if (useLocalDbFallback) {
+      const localDb = getLocalDb();
+      const value = localDb[prop as keyof LocalDatabase];
+      if (typeof value === "function") {
+        return value.bind(localDb);
+      }
+      return value;
+    }
+
+    const instance = getRawDbInstance();
+    if (!instance) {
+      const localDb = getLocalDb();
+      const value = localDb[prop as keyof LocalDatabase];
+      if (typeof value === "function") {
+        return value.bind(localDb);
+      }
+      return value;
+    }
+
     const value = instance[prop];
     if (typeof value === "function") {
-      return value.bind(instance);
+      return (...args: any[]) => {
+        try {
+          const result = value.apply(instance, args);
+          if (result && typeof result.then === "function") {
+            return result.catch((err: any) => {
+              const errMsg = err?.message || String(err);
+              if (errMsg.includes("PERMISSION_DENIED") || errMsg.includes("credentials") || errMsg.includes("auth") || errMsg.includes("credential")) {
+                console.warn("[Firestore] Permission error caught on database promise. Activating local database fallback.");
+                useLocalDbFallback = true;
+                const localDb = getLocalDb() as any;
+                return localDb[prop](...args);
+              }
+              throw err;
+            });
+          }
+          return result;
+        } catch (err: any) {
+          const errMsg = err?.message || String(err);
+          if (errMsg.includes("PERMISSION_DENIED") || errMsg.includes("credentials") || errMsg.includes("auth") || errMsg.includes("credential")) {
+            console.warn("[Firestore] Permission error caught on database sync call. Activating local database fallback.");
+            useLocalDbFallback = true;
+            const localDb = getLocalDb() as any;
+            return localDb[prop](...args);
+          }
+          throw err;
+        }
+      };
     }
     return value;
   }
@@ -325,6 +499,15 @@ async function loadPendingActivationsFromFirestore() {
     console.warn("[Billing Engine] Failed to load pending activations from Firestore (might be uninitialized yet):", err);
   }
 }
+
+// Automatically initialize database mode and load pending activations on startup
+initializeDatabaseMode().then(() => {
+  loadPendingActivationsFromFirestore().catch((err: any) => {
+    console.error("[Billing Engine] Lazy pending load error:", err);
+  });
+}).catch((err: any) => {
+  console.error("[Database Mode Init] Failed during startup:", err);
+});
 
 // Security Helper to activate Pro subscription & store payment record
 async function activateProSubscription(

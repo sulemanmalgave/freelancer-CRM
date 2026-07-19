@@ -97,22 +97,33 @@ export default function UpgradeModal({
   const [actionSuccess, setActionSuccess] = useState("");
 
   const isIndia = selectedCountry === "IN";
+  const [selectedGateway, setSelectedGateway] = useState<"razorpay" | "paypal">("razorpay");
+
+  useEffect(() => {
+    if (isIndia) {
+      setSelectedGateway("razorpay");
+    } else {
+      setSelectedGateway("paypal");
+    }
+  }, [isIndia]);
+
+  const showInr = isIndia && selectedGateway === "razorpay";
 
   // Calculate pricing based on manual region & selection
   const planDetails = {
     "Monthly": {
-      amount: isIndia ? 199 : 2.99,
-      currencySymbol: isIndia ? "₹" : "$",
-      currencyCode: isIndia ? "INR" : "USD",
+      amount: showInr ? 199 : 2.99,
+      currencySymbol: showInr ? "₹" : "$",
+      currencyCode: showInr ? "INR" : "USD",
       label: "Monthly Pro Access",
       savingLabel: null,
     },
     "3 Months": {
-      amount: isIndia ? 399 : 7.99,
-      currencySymbol: isIndia ? "₹" : "$",
-      currencyCode: isIndia ? "INR" : "USD",
+      amount: showInr ? 399 : 7.99,
+      currencySymbol: showInr ? "₹" : "$",
+      currencyCode: showInr ? "INR" : "USD",
       label: "3 Months Pro Saver",
-      savingLabel: isIndia ? "Save 33% compared to monthly" : "Save 11% compared to monthly",
+      savingLabel: showInr ? "Save 33% compared to monthly" : "Save 11% compared to monthly",
     }
   };
 
@@ -351,21 +362,21 @@ export default function UpgradeModal({
             }
           }
 
-          // 2. Dynamic Script Loading for PayPal Subscriptions (International)
-          if (!isIndia) {
+          // 2. Dynamic Script Loading for PayPal Subscriptions (International or India with PayPal selected)
+          if (!isIndia || selectedGateway === "paypal") {
             const oldScript = document.getElementById("paypal-sdk-script");
-            if (oldScript) {
-              oldScript.remove();
+            if (!oldScript) {
+              const ppScript = document.createElement("script");
+              ppScript.id = "paypal-sdk-script";
+              // Important: Use vault=true and intent=subscription for Subscriptions SDK routing, and force USD currency
+              ppScript.src = `https://www.paypal.com/sdk/js?client-id=${data.paypalClientId}&vault=true&intent=subscription&currency=USD`;
+              ppScript.async = true;
+              ppScript.onload = () => setPaypalLoaded(true);
+              ppScript.onerror = () => console.error("Failed to load PayPal Subscriptions SDK");
+              document.body.appendChild(ppScript);
+            } else {
+              setPaypalLoaded(true);
             }
-
-            const ppScript = document.createElement("script");
-            ppScript.id = "paypal-sdk-script";
-            // Important: Use vault=true and intent=subscription for Subscriptions SDK routing, and force USD currency
-            ppScript.src = `https://www.paypal.com/sdk/js?client-id=${data.paypalClientId}&vault=true&intent=subscription&currency=USD`;
-            ppScript.async = true;
-            ppScript.onload = () => setPaypalLoaded(true);
-            ppScript.onerror = () => console.error("Failed to load PayPal Subscriptions SDK");
-            document.body.appendChild(ppScript);
           }
         })
         .catch((err) => {
@@ -373,11 +384,11 @@ export default function UpgradeModal({
           setIsLoadingConfig(false);
         });
     }
-  }, [isOpen, isIndia]);
+  }, [isOpen, isIndia, selectedGateway]);
 
   // Handle dynamic PayPal Subscriptions Buttons mounting
   useEffect(() => {
-    if (paypalLoaded && purchaseStage === "plans" && !isIndia && paymentConfig) {
+    if (paypalLoaded && purchaseStage === "plans" && (!isIndia || selectedGateway === "paypal") && paymentConfig) {
       const container = document.getElementById("paypal-button-container");
       if (container) {
         // Clear children to avoid double-rendering on selection change
@@ -470,7 +481,7 @@ export default function UpgradeModal({
         }
       }
     }
-  }, [paypalLoaded, purchaseStage, isIndia, selectedPlan, paymentConfig]);
+  }, [paypalLoaded, purchaseStage, isIndia, selectedGateway, selectedPlan, paymentConfig]);
 
   // Handle Razorpay Checkout Flow
   const handleRazorpayCheckout = async () => {
@@ -669,7 +680,7 @@ export default function UpgradeModal({
 
   if (!isOpen) return null;
 
-  const isConfigured = isIndia ? paymentConfig?.razorpayConfigured : paymentConfig?.paypalConfigured;
+  const isConfigured = selectedGateway === "razorpay" ? paymentConfig?.razorpayConfigured : paymentConfig?.paypalConfigured;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm">
@@ -924,7 +935,7 @@ export default function UpgradeModal({
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Monthly Plan</span>
                         <div className="flex items-baseline gap-0.5">
                           <strong className="text-xl font-black text-slate-900">
-                            {isIndia ? "₹199" : "$2.99"}
+                            {showInr ? "₹199" : "$2.99"}
                           </strong>
                           <span className="text-[10px] text-slate-400">/mo</span>
                         </div>
@@ -944,12 +955,12 @@ export default function UpgradeModal({
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">3 Months</span>
                         <div className="flex items-baseline gap-0.5">
                           <strong className="text-xl font-black text-slate-900">
-                            {isIndia ? "₹399" : "$7.99"}
+                            {showInr ? "₹399" : "$7.99"}
                           </strong>
                           <span className="text-[10px] text-slate-400">/total</span>
                         </div>
                         <span className="text-[8px] text-emerald-600 font-extrabold mt-1">
-                          {isIndia ? "Save 33% (~₹133/mo)" : "Save 11% (~$2.66/mo)"}
+                          {showInr ? "Save 33% (~₹133/mo)" : "Save 11% (~$2.66/mo)"}
                         </span>
                       </button>
                     </div>
@@ -1012,9 +1023,40 @@ export default function UpgradeModal({
                         <span>Secure Routed Gateway</span>
                       </h4>
                       <span className="text-[9px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold uppercase">
-                        {isIndia ? "Razorpay INR" : "PayPal USD"}
+                        {selectedGateway === "razorpay" ? "Razorpay INR" : "PayPal USD"}
                       </span>
                     </div>
+
+                    {isIndia && (
+                      <div className="grid grid-cols-2 gap-2 mb-4 p-1 bg-slate-50 rounded-xl border border-slate-150">
+                        <button
+                          type="button"
+                          id="select-razorpay-btn"
+                          onClick={() => setSelectedGateway("razorpay")}
+                          className={`p-2.5 rounded-lg text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                            selectedGateway === "razorpay"
+                              ? "bg-white border border-indigo-200 shadow-sm font-extrabold text-indigo-700"
+                              : "border border-transparent hover:bg-slate-100 font-semibold text-slate-500"
+                          }`}
+                        >
+                          <Smartphone size={14} className="text-indigo-600 shrink-0" />
+                          <span className="text-xs">Razorpay (UPI / Card)</span>
+                        </button>
+                        <button
+                          type="button"
+                          id="select-paypal-btn"
+                          onClick={() => setSelectedGateway("paypal")}
+                          className={`p-2.5 rounded-lg text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                            selectedGateway === "paypal"
+                              ? "bg-white border border-indigo-200 shadow-sm font-extrabold text-indigo-700"
+                              : "border border-transparent hover:bg-slate-100 font-semibold text-slate-500"
+                          }`}
+                        >
+                          <Wallet size={14} className="text-indigo-600 shrink-0" />
+                          <span className="text-xs">PayPal</span>
+                        </button>
+                      </div>
+                    )}
 
                     {isLoadingConfig ? (
                       <div className="py-4 flex justify-center items-center gap-2 text-slate-400 text-xs font-medium">
@@ -1028,7 +1070,7 @@ export default function UpgradeModal({
                           <div className="p-3 border border-rose-500/20 bg-rose-500/10 text-rose-950 rounded-xl text-[10px] leading-normal font-semibold flex items-start gap-1.5">
                             <AlertTriangle size={14} className="text-rose-600 shrink-0 mt-0.5" />
                             <div>
-                              {isIndia ? (
+                              {selectedGateway === "razorpay" ? (
                                 <>
                                   <strong>Gateway Key Required:</strong> Your server-side Razorpay credentials are not configured. Please define <code>RAZORPAY_KEY_ID</code> and <code>RAZORPAY_KEY_SECRET</code> in your environment variables to activate the checkout.
                                 </>
@@ -1041,11 +1083,12 @@ export default function UpgradeModal({
                           </div>
                         )}
 
-                        {/* RENDER RAZORPAY COMPONENT (INDIA) */}
-                        {isIndia && (
+                        {/* RENDER RAZORPAY COMPONENT */}
+                        {selectedGateway === "razorpay" && (
                           <div className="space-y-2">
                             <button
                               type="button"
+                              id="razorpay-checkout-btn"
                               onClick={handleRazorpayCheckout}
                               disabled={!isConfigured}
                               className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none disabled:cursor-not-allowed text-white rounded-xl text-xs font-extrabold shadow-lg shadow-indigo-600/15 flex items-center justify-center gap-2 cursor-pointer transition-all hover:scale-[1.01]"
@@ -1059,11 +1102,11 @@ export default function UpgradeModal({
                           </div>
                         )}
 
-                        {/* RENDER PAYPAL COMPONENT (OUTSIDE INDIA) */}
-                        {!isIndia && (
+                        {/* RENDER PAYPAL COMPONENT */}
+                        {selectedGateway === "paypal" && (
                           <div className="space-y-3">
                             {isConfigured ? (
-                              <div className="min-h-[100px] w-full" id="paypal-button-container" key={selectedPlan}>
+                              <div className="min-h-[100px] w-full" id="paypal-button-container" key={`${selectedPlan}-${selectedGateway}`}>
                                 {/* PayPal Script injects Buttons container here */}
                               </div>
                             ) : (
