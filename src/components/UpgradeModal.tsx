@@ -358,14 +358,19 @@ export default function UpgradeModal({
               oldScript.remove();
             }
 
-            const ppScript = document.createElement("script");
-            ppScript.id = "paypal-sdk-script";
-            // Important: Use vault=true and intent=subscription for Subscriptions SDK routing, and force USD currency
-            ppScript.src = `https://www.paypal.com/sdk/js?client-id=${data.paypalClientId}&vault=true&intent=subscription&currency=USD`;
-            ppScript.async = true;
-            ppScript.onload = () => setPaypalLoaded(true);
-            ppScript.onerror = () => console.error("Failed to load PayPal Subscriptions SDK");
-            document.body.appendChild(ppScript);
+            if (data.paypalClientId && data.paypalClientId.trim() !== "" && data.paypalClientId !== "undefined") {
+              const ppScript = document.createElement("script");
+              ppScript.id = "paypal-sdk-script";
+              // Important: Use vault=true and intent=subscription for Subscriptions SDK routing, and force USD currency
+              ppScript.src = `https://www.paypal.com/sdk/js?client-id=${data.paypalClientId}&vault=true&intent=subscription&currency=USD`;
+              ppScript.async = true;
+              ppScript.onload = () => setPaypalLoaded(true);
+              ppScript.onerror = () => console.error("Failed to load PayPal Subscriptions SDK");
+              document.body.appendChild(ppScript);
+            } else {
+              console.warn("[PayPal] Skipping SDK loading because client-id is not configured.");
+              setPaypalLoaded(false);
+            }
           }
         })
         .catch((err) => {
@@ -396,6 +401,13 @@ export default function UpgradeModal({
                 ? paymentConfig.paypalPlanQuarterly 
                 : paymentConfig.paypalPlanMonthly;
               
+              if (!targetPlanId || targetPlanId.trim() === "" || targetPlanId === "undefined" || targetPlanId.startsWith("P-3023") || targetPlanId.startsWith("P-5919")) {
+                const errMsg = "A valid Live PayPal Billing Plan ID is required. Please ensure your PayPal configurations are active and correct.";
+                setPaymentError(errMsg);
+                console.error("[PayPal SDK] Subscription creation blocked: Target Plan ID is missing/invalid:", targetPlanId);
+                return Promise.reject(new Error(errMsg));
+              }
+
               const customId = `${profile.id}:${selectedPlan === "3 Months" ? "quarterly" : "monthly"}`;
               console.log(`[PayPal SDK] Initiating subscription. Plan ID: ${targetPlanId}, Custom ID: ${customId}`);
               
@@ -407,6 +419,8 @@ export default function UpgradeModal({
                 return subId;
               }).catch((err: any) => {
                 console.error("[PayPal SDK] Error during actions.subscription.create:", err);
+                const apiErr = err?.message || err?.toString() || "The PayPal subscription Plan ID is invalid, inactive, or belongs to a different developer environment.";
+                setPaymentError(`A valid Live PayPal Billing Plan ID is required. Details: ${apiErr}`);
                 throw err;
               });
             },
@@ -742,6 +756,12 @@ export default function UpgradeModal({
   if (!isOpen) return null;
 
   const isConfigured = isIndia ? paymentConfig?.razorpayConfigured : paymentConfig?.paypalConfigured;
+
+  const activePlanId = selectedPlan === "3 Months" 
+    ? paymentConfig?.paypalPlanQuarterly 
+    : paymentConfig?.paypalPlanMonthly;
+  
+  const isPlanValid = activePlanId && activePlanId.trim() !== "" && activePlanId !== "undefined" && !activePlanId.startsWith("P-3023") && !activePlanId.startsWith("P-5919");
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm">
@@ -1135,9 +1155,19 @@ export default function UpgradeModal({
                         {!isIndia && (
                           <div className="space-y-3">
                             {isConfigured ? (
-                              <div className="min-h-[100px] w-full" id="paypal-button-container" key={selectedPlan}>
-                                {/* PayPal Script injects Buttons container here */}
-                              </div>
+                              isPlanValid ? (
+                                <div className="min-h-[100px] w-full" id="paypal-button-container" key={selectedPlan}>
+                                  {/* PayPal Script injects Buttons container here */}
+                                </div>
+                              ) : (
+                                <div className="p-4 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-center text-xs space-y-2">
+                                  <AlertCircle size={18} className="mx-auto text-rose-500 animate-bounce" />
+                                  <p className="font-semibold text-rose-800">PayPal Active Billing Plan Required</p>
+                                  <p className="text-[10px] text-rose-600 leading-normal">
+                                    The PayPal subscription Plan ID is invalid, inactive, or belongs to a different developer environment. A valid Live PayPal Billing Plan ID is required.
+                                  </p>
+                                </div>
+                              )
                             ) : (
                               <div className="p-4 bg-slate-50 border border-slate-200 text-slate-600 rounded-xl text-center text-xs space-y-2">
                                 <Wallet size={18} className="mx-auto text-slate-400" />

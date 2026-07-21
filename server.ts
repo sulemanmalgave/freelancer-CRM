@@ -905,7 +905,19 @@ function getRazorpayCredentials() {
   return { keyId, keySecret };
 }
 
-// Dynamic PayPal product and billing plan auto-provisioning to avoid RESOURCE_NOT_FOUND (INVALID_RESOURCE_ID)
+// -----------------------------------------------------------------------------
+// Live-Only PayPal Product & Billing Plan Auto-Provisioning Engine
+// -----------------------------------------------------------------------------
+
+function getPaypalApiUrl(): string {
+  // Enforce PayPal Live environment only. Discard sandbox overrides to prevent mixed environments.
+  const envUrl = process.env.PAYPAL_API_URL || "";
+  if (envUrl && !envUrl.toLowerCase().includes("sandbox")) {
+    return envUrl;
+  }
+  return "https://api-m.paypal.com";
+}
+
 let paypalCachePromise: Promise<{ monthlyPlanId: string, quarterlyPlanId: string } | null> | null = null;
 let lastPaypalAttemptTime = 0;
 
@@ -928,18 +940,30 @@ function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T
 
 async function getOrCreatePaypalPlans(apiUrl: string, clientId: string, clientSecret: string) {
   const now = Date.now();
+  
+  // 1. Verify environment variables are present and loaded correctly
+  console.log("[PayPal Verification] Verifying environment variables:");
+  console.log(`- PAYPAL_CLIENT_ID: ${clientId ? `LOADED (length: ${clientId.length})` : "MISSING"}`);
+  console.log(`- PAYPAL_CLIENT_SECRET: ${clientSecret ? "LOADED" : "MISSING"}`);
+  console.log(`- Target PayPal Environment URL: ${apiUrl}`);
+
+  if (!clientId || !clientSecret || clientId.trim() === "" || clientSecret.trim() === "" || clientId === "undefined" || clientSecret === "undefined") {
+    console.error("[PayPal API Error] Cannot initialize PayPal Subscriptions because Client ID or Secret is unconfigured/missing.");
+    return null;
+  }
+
   if (!paypalCachePromise) {
-    if (now - lastPaypalAttemptTime < 60000) {
-      console.log("[PayPal] Throttling dynamic plan creation attempts to avoid blocking the server.");
+    if (now - lastPaypalAttemptTime < 30000) {
+      console.log("[PayPal] Throttling active plan creation/verification attempts to avoid server blocking.");
       return null;
     }
     lastPaypalAttemptTime = now;
 
     paypalCachePromise = (async () => {
-      // 1. Authenticate with PayPal first to ensure credentials work and obtain an access token
+      // 1. Authenticate with PayPal to get an Access Token
       let accessToken = "";
       try {
-        console.log(`[PayPal API Request] POST ${apiUrl}/v1/oauth2/token - Initiating authentication with Client ID: ${clientId.substring(0, 10)}...`);
+        console.log(`[PayPal API Request] POST ${apiUrl}/v1/oauth2/token - Initiating Live Authentication...`);
         const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
         const tokenRes = await fetch(`${apiUrl}/v1/oauth2/token`, {
           method: "POST",
@@ -951,25 +975,28 @@ async function getOrCreatePaypalPlans(apiUrl: string, clientId: string, clientSe
         });
 
         const debugId = tokenRes.headers.get("paypal-debug-id") || "N/A";
-        console.log(`[PayPal API Response] Auth Status: ${tokenRes.status}, Debug ID: ${debugId}`);
+        console.log(`[PayPal API Response] Authentication Status: ${tokenRes.status}, Debug ID: ${debugId}`);
 
         if (!tokenRes.ok) {
           const errText = await tokenRes.text();
-          console.error(`[PayPal API Error] Authentication failed. Debug ID: ${debugId}. Error Details: ${errText}`);
-          throw new Error(`PayPal auth failed (Debug ID: ${debugId}): ${errText}`);
+          console.error(`[PayPal API Error] Auth failed! Status: ${tokenRes.status}, Debug ID: ${debugId}, Body: ${errText}`);
+          throw new Error(`PayPal Live auth failed (Debug ID: ${debugId}): ${errText}`);
         }
 
         const tokenData = await tokenRes.json();
         accessToken = tokenData.access_token;
-        console.log("[PayPal] Authentication successful. Obtained Bearer token.");
+        console.log("[PayPal] Live Authentication successful. Obtained Bearer token.");
       } catch (authErr: any) {
         console.error("[PayPal] Exception during PayPal authentication:", authErr);
         paypalCachePromise = null;
         return null;
       }
 
-      // Helper function to verify if a plan ID exists and is active on the current merchant account
+      // Verification function to check if a Plan ID is active on this specific merchant account
       const verifyPlan = async (planId: string): Promise<boolean> => {
+        if (!planId || planId.trim() === "" || planId === "undefined" || planId.startsWith("P-5919") || planId.startsWith("P-3023")) {
+          return false; // Reject placeholders
+        }
         try {
           console.log(`[PayPal API Request] GET ${apiUrl}/v1/billing/plans/${planId} - Verifying plan status...`);
           const checkRes = await fetch(`${apiUrl}/v1/billing/plans/${planId}`, {
@@ -995,13 +1022,31 @@ async function getOrCreatePaypalPlans(apiUrl: string, clientId: string, clientSe
         }
       };
 
-      // 2. Try to read cached plans from Firestore and verify they are still valid/active
+      // 2. Load and verify plans from Environment Variables if specified
+      const envMonthly = process.env.PAYPAL_PLAN_MONTHLY;
+      const envQuarterly = process.env.PAYPAL_PLAN_QUARTERLY;
+      if (envMonthly && envQuarterly && envMonthly !== "P-59199343B03893339MZVLUOI" && envQuarterly !== "P-302302384920239084920233") {
+        console.log("[PayPal] Found plan IDs in Environment Variables. Verifying active status on Live account...");
+        const isMonValid = await verifyPlan(envMonthly);
+        const isQtrValid = await verifyPlan(envQuarterly);
+        if (isMonValid && isQtrValid) {
+          console.log("[PayPal] Active environment plan IDs successfully verified!");
+          return {
+            monthlyPlanId: envMonthly,
+            quarterlyPlanId: envQuarterly
+          };
+        } else {
+          console.warn("[PayPal] Environment plan IDs are not active or valid in the Live account. Falling back to Firestore cache...");
+        }
+      }
+
+      // 3. Load and verify plans from Firestore config cache
       try {
-        const configDoc = await db.collection("config").doc("paypal_v3").get();
+        const configDoc = await db.collection("config").doc("paypal_live_v4").get();
         if (configDoc.exists) {
           const data = configDoc.data();
           if (data && data.paypalPlanMonthly && data.paypalPlanQuarterly) {
-            console.log("[PayPal] Retrieved plan IDs from Firestore cache. Validating them on current PayPal merchant account...");
+            console.log("[PayPal] Retrieved plan IDs from Firestore 'paypal_live_v4' cache. Validating...");
             const isMonthlyValid = await verifyPlan(data.paypalPlanMonthly);
             const isQuarterlyValid = await verifyPlan(data.paypalPlanQuarterly);
             
@@ -1020,12 +1065,18 @@ async function getOrCreatePaypalPlans(apiUrl: string, clientId: string, clientSe
         console.warn("[PayPal] Failed to read cached plans from Firestore. Proceeding to fetch/create dynamically...", err);
       }
 
-      // 3. Fallback to dynamic creation via PayPal REST APIs if cache is missing or invalid
+      // 4. Fallback to dynamic creation via PayPal REST APIs if cache is missing or invalid
       try {
-        console.log("[PayPal] Creating dynamic product and plans under the configured merchant account...");
+        console.log("[PayPal] Auto-creating Product and active Billing Plans on the Live Merchant Account...");
 
-        // Create catalog Product
+        // Create Catalog Product "Freelancer CRM Pro" (Requirement 5)
         const requestIdProd = `req-prod-${Date.now()}`;
+        const productPayload = {
+          name: "Freelancer CRM Pro",
+          description: "Premium subscription to Freelancer CRM & Client Portals",
+          type: "SERVICE",
+          category: "SOFTWARE"
+        };
         console.log(`[PayPal API Request] POST ${apiUrl}/v1/catalogs/products (Request-Id: ${requestIdProd})`);
         const productRes = await fetch(`${apiUrl}/v1/catalogs/products`, {
           method: "POST",
@@ -1034,12 +1085,7 @@ async function getOrCreatePaypalPlans(apiUrl: string, clientId: string, clientSe
             "Content-Type": "application/json",
             "PayPal-Request-Id": requestIdProd,
           },
-          body: JSON.stringify({
-            name: "Freelancer Pro Plan",
-            description: "Premium access to Freelancer CRM & Billing Tools",
-            type: "SERVICE",
-            category: "SOFTWARE"
-          }),
+          body: JSON.stringify(productPayload),
         });
 
         const prodDebugId = productRes.headers.get("paypal-debug-id") || "N/A";
@@ -1047,17 +1093,53 @@ async function getOrCreatePaypalPlans(apiUrl: string, clientId: string, clientSe
 
         if (!productRes.ok) {
           const prodErr = await productRes.text();
-          console.error(`[PayPal API Error] Product creation failed. Debug ID: ${prodDebugId}. Details: ${prodErr}`);
-          throw new Error(`PayPal product creation failed (Debug ID: ${prodDebugId}): ${prodErr}`);
+          console.error(`[PayPal API Error] Catalog Product creation failed!`);
+          console.error(`- Endpoint: POST ${apiUrl}/v1/catalogs/products`);
+          console.error(`- Status: ${productRes.status}, Debug ID: ${prodDebugId}`);
+          console.error(`- Response Payload: ${prodErr}`);
+          throw new Error(`PayPal Catalog Product creation failed (Status: ${productRes.status}): ${prodErr}`);
         }
 
         const productData = await productRes.json();
         const productId = productData.id;
-        console.log(`[PayPal] Successfully created catalog product with ID: ${productId}`);
+        console.log(`[PayPal] Successfully created Billing Product: "${productPayload.name}" with ID: ${productId}`);
 
-        // Create Pro Monthly Plan ($2.99 / Month)
+        // Create Pro Monthly Plan ($4.99 / Month) (Requirement 5)
         const requestIdMonthly = `req-plan-mon-${Date.now()}`;
-        console.log(`[PayPal API Request] POST ${apiUrl}/v1/billing/plans - Creating Pro Monthly Plan (Request-Id: ${requestIdMonthly})`);
+        const monthlyPayload = {
+          product_id: productId,
+          name: "Freelancer CRM Pro Monthly",
+          description: "$4.99 every month",
+          status: "ACTIVE",
+          billing_cycles: [
+            {
+              frequency: {
+                interval_unit: "MONTH",
+                interval_count: 1
+              },
+              tenure_type: "REGULAR",
+              sequence: 1,
+              total_cycles: 0,
+              pricing_scheme: {
+                fixed_price: {
+                  value: "4.99",
+                  currency_code: "USD"
+                }
+              }
+            }
+          ],
+          payment_preferences: {
+            auto_bill_outstanding: true,
+            setup_fee: {
+              value: "0",
+              currency_code: "USD"
+            },
+            setup_fee_failure_action: "CONTINUE",
+            payment_failure_threshold: 3
+          }
+        };
+
+        console.log(`[PayPal API Request] POST ${apiUrl}/v1/billing/plans - Creating Monthly Plan...`);
         const monthlyRes = await fetch(`${apiUrl}/v1/billing/plans`, {
           method: "POST",
           headers: {
@@ -1065,38 +1147,7 @@ async function getOrCreatePaypalPlans(apiUrl: string, clientId: string, clientSe
             "Content-Type": "application/json",
             "PayPal-Request-Id": requestIdMonthly,
           },
-          body: JSON.stringify({
-            product_id: productId,
-            name: "Pro Monthly Plan",
-            description: "Monthly subscription for Pro features",
-            status: "ACTIVE",
-            billing_cycles: [
-              {
-                frequency: {
-                  interval_unit: "MONTH",
-                  interval_count: 1
-                },
-                tenure_type: "REGULAR",
-                sequence: 1,
-                total_cycles: 0,
-                pricing_scheme: {
-                  fixed_price: {
-                    value: "2.99",
-                    currency_code: "USD"
-                  }
-                }
-              }
-            ],
-            payment_preferences: {
-              auto_bill_outstanding: true,
-              setup_fee: {
-                value: "0",
-                currency_code: "USD"
-              },
-              setup_fee_failure_action: "CONTINUE",
-              payment_failure_threshold: 3
-            }
-          }),
+          body: JSON.stringify(monthlyPayload),
         });
 
         const monDebugId = monthlyRes.headers.get("paypal-debug-id") || "N/A";
@@ -1104,17 +1155,53 @@ async function getOrCreatePaypalPlans(apiUrl: string, clientId: string, clientSe
 
         if (!monthlyRes.ok) {
           const monErr = await monthlyRes.text();
-          console.error(`[PayPal API Error] Monthly plan creation failed. Debug ID: ${monDebugId}. Details: ${monErr}`);
-          throw new Error(`PayPal monthly plan creation failed (Debug ID: ${monDebugId}): ${monErr}`);
+          console.error(`[PayPal API Error] Monthly Billing Plan creation failed!`);
+          console.error(`- Endpoint: POST ${apiUrl}/v1/billing/plans`);
+          console.error(`- Status: ${monthlyRes.status}, Debug ID: ${monDebugId}`);
+          console.error(`- Response Payload: ${monErr}`);
+          throw new Error(`PayPal Monthly Plan creation failed (Status: ${monthlyRes.status}): ${monErr}`);
         }
 
         const monthlyData = await monthlyRes.json();
         const monthlyPlanId = monthlyData.id;
-        console.log(`[PayPal] Successfully created Monthly Plan: ${monthlyPlanId}`);
+        console.log(`[PayPal] Successfully created Monthly Plan ID: ${monthlyPlanId}`);
 
-        // Create Pro Quarterly Plan ($7.99 / 3 Months)
+        // Create Pro Quarterly Plan ($11.99 / 3 Months) (Requirement 5)
         const requestIdQuarterly = `req-plan-qtr-${Date.now()}`;
-        console.log(`[PayPal API Request] POST ${apiUrl}/v1/billing/plans - Creating Pro Quarterly Plan (Request-Id: ${requestIdQuarterly})`);
+        const quarterlyPayload = {
+          product_id: productId,
+          name: "Freelancer CRM Pro Quarterly",
+          description: "$11.99 every 3 months",
+          status: "ACTIVE",
+          billing_cycles: [
+            {
+              frequency: {
+                interval_unit: "MONTH",
+                interval_count: 3
+              },
+              tenure_type: "REGULAR",
+              sequence: 1,
+              total_cycles: 0,
+              pricing_scheme: {
+                fixed_price: {
+                  value: "11.99",
+                  currency_code: "USD"
+                }
+              }
+            }
+          ],
+          payment_preferences: {
+            auto_bill_outstanding: true,
+            setup_fee: {
+              value: "0",
+              currency_code: "USD"
+            },
+            setup_fee_failure_action: "CONTINUE",
+            payment_failure_threshold: 3
+          }
+        };
+
+        console.log(`[PayPal API Request] POST ${apiUrl}/v1/billing/plans - Creating Quarterly Plan...`);
         const quarterlyRes = await fetch(`${apiUrl}/v1/billing/plans`, {
           method: "POST",
           headers: {
@@ -1122,38 +1209,7 @@ async function getOrCreatePaypalPlans(apiUrl: string, clientId: string, clientSe
             "Content-Type": "application/json",
             "PayPal-Request-Id": requestIdQuarterly,
           },
-          body: JSON.stringify({
-            product_id: productId,
-            name: "Pro Quarterly Plan",
-            description: "Quarterly subscription for Pro features",
-            status: "ACTIVE",
-            billing_cycles: [
-              {
-                frequency: {
-                  interval_unit: "MONTH",
-                  interval_count: 3
-                },
-                tenure_type: "REGULAR",
-                sequence: 1,
-                total_cycles: 0,
-                pricing_scheme: {
-                  fixed_price: {
-                    value: "7.99",
-                    currency_code: "USD"
-                  }
-                }
-              }
-            ],
-            payment_preferences: {
-              auto_bill_outstanding: true,
-              setup_fee: {
-                value: "0",
-                currency_code: "USD"
-              },
-              setup_fee_failure_action: "CONTINUE",
-              payment_failure_threshold: 3
-            }
-          }),
+          body: JSON.stringify(quarterlyPayload),
         });
 
         const qtrDebugId = quarterlyRes.headers.get("paypal-debug-id") || "N/A";
@@ -1161,34 +1217,58 @@ async function getOrCreatePaypalPlans(apiUrl: string, clientId: string, clientSe
 
         if (!quarterlyRes.ok) {
           const qtrErr = await quarterlyRes.text();
-          console.error(`[PayPal API Error] Quarterly plan creation failed. Debug ID: ${qtrDebugId}. Details: ${qtrErr}`);
-          throw new Error(`PayPal quarterly plan creation failed (Debug ID: ${qtrDebugId}): ${qtrErr}`);
+          console.error(`[PayPal API Error] Quarterly Billing Plan creation failed!`);
+          console.error(`- Endpoint: POST ${apiUrl}/v1/billing/plans`);
+          console.error(`- Status: ${quarterlyRes.status}, Debug ID: ${qtrDebugId}`);
+          console.error(`- Response Payload: ${qtrErr}`);
+          throw new Error(`PayPal Quarterly Plan creation failed (Status: ${quarterlyRes.status}): ${qtrErr}`);
         }
 
         const quarterlyData = await quarterlyRes.json();
         const quarterlyPlanId = quarterlyData.id;
-        console.log(`[PayPal] Successfully created Quarterly Plan: ${quarterlyPlanId}`);
+        console.log(`[PayPal] Successfully created Quarterly Plan ID: ${quarterlyPlanId}`);
 
-        // Save new plan details in Firestore
+        // Explicitly activate the created Billing Plans to ensure compliance (Requirement 6)
+        const activatePlanId = async (planId: string) => {
+          try {
+            console.log(`[PayPal API Request] POST ${apiUrl}/v1/billing/plans/${planId}/activate - Explicitly activating plan...`);
+            const actRes = await fetch(`${apiUrl}/v1/billing/plans/${planId}/activate`, {
+              method: "POST",
+              headers: {
+                "Authorization": `Bearer ${accessToken}`,
+                "Content-Type": "application/json"
+              }
+            });
+            const actDebugId = actRes.headers.get("paypal-debug-id") || "N/A";
+            console.log(`[PayPal API Response] Plan ${planId} Activation Status: ${actRes.status}, Debug ID: ${actDebugId}`);
+          } catch (actErr) {
+            console.warn(`[PayPal] Plan ${planId} explicit activation request warning:`, actErr);
+          }
+        };
+
+        await activatePlanId(monthlyPlanId);
+        await activatePlanId(quarterlyPlanId);
+
+        // Save generated Live Plan IDs securely to Firestore for reuse (Requirement 7)
         try {
-          await db.collection("config").doc("paypal_v3").set({
+          await db.collection("config").doc("paypal_live_v4").set({
             paypalPlanMonthly: monthlyPlanId,
             paypalPlanQuarterly: quarterlyPlanId,
             productId: productId,
+            environment: "live",
             createdAt: new Date().toISOString()
           });
-          console.log("[PayPal] Saved newly created and verified plan IDs to Firestore cache.");
+          console.log("[PayPal] Successfully cached newly created Live Plan IDs to Firestore 'paypal_live_v4' document.");
         } catch (fsErr) {
-          console.warn("[PayPal] Failed to write plan IDs to Firestore cache (falling back to memory-only):", fsErr);
+          console.error("[PayPal] Error caching newly created plan IDs to Firestore:", fsErr);
         }
 
         return {
           monthlyPlanId,
           quarterlyPlanId,
         };
-      } catch (err) {
-        console.error("[PayPal] Error creating dynamic products/plans:", err);
-        // Reset promise on error so that we can retry
+      } catch (err: any) {
+        console.error("[PayPal] Failed to dynamically auto-create live billing plans:", err);
         paypalCachePromise = null;
         return null;
       }
@@ -1205,16 +1285,25 @@ app.get("/api/payment/config", async (req, res) => {
 
   const finalPaypalClientId = process.env.PAYPAL_CLIENT_ID || process.env.VITE_PAYPAL_CLIENT_ID || "";
   const hasPaypalConfigured = !!finalPaypalClientId && !!process.env.PAYPAL_CLIENT_SECRET;
-  const apiUrl = process.env.PAYPAL_API_URL || "https://api-m.sandbox.paypal.com";
+  const apiUrl = getPaypalApiUrl();
 
-  let paypalPlanMonthly = process.env.PAYPAL_PLAN_MONTHLY || "P-59199343B03893339MZVLUOI";
-  let paypalPlanQuarterly = process.env.PAYPAL_PLAN_QUARTERLY || "P-302302384920239084920233";
+  // Initialize with blank configurations to prevent falling back to sandbox defaults in a Live environment
+  let paypalPlanMonthly = "";
+  let paypalPlanQuarterly = "";
+
+  // Accept env values if explicitly set and not part of old sandbox fallback
+  if (process.env.PAYPAL_PLAN_MONTHLY && process.env.PAYPAL_PLAN_MONTHLY !== "P-59199343B03893339MZVLUOI") {
+    paypalPlanMonthly = process.env.PAYPAL_PLAN_MONTHLY;
+  }
+  if (process.env.PAYPAL_PLAN_QUARTERLY && process.env.PAYPAL_PLAN_QUARTERLY !== "P-302302384920239084920233") {
+    paypalPlanQuarterly = process.env.PAYPAL_PLAN_QUARTERLY;
+  }
 
   if (hasPaypalConfigured) {
     try {
       const dynamicPlans = await withTimeout(
         getOrCreatePaypalPlans(apiUrl, finalPaypalClientId, process.env.PAYPAL_CLIENT_SECRET!),
-        1500,
+        10000, // Extend timeout to ensure proper compilation/creation on slow live API calls
         null
       );
       if (dynamicPlans) {
@@ -1222,9 +1311,16 @@ app.get("/api/payment/config", async (req, res) => {
         paypalPlanQuarterly = dynamicPlans.quarterlyPlanId;
       }
     } catch (err) {
-      console.error("[PayPal] Failed to dynamically get or create active billing plans:", err);
+      console.error("[PayPal] Exception during active billing plan initialization:", err);
     }
   }
+
+  console.log("[PayPal Public Configuration Response]:", {
+    paypalClientId: finalPaypalClientId ? `${finalPaypalClientId.substring(0, 10)}...` : "NONE",
+    paypalConfigured: hasPaypalConfigured,
+    paypalPlanMonthly: paypalPlanMonthly || "NOT_ACTIVE",
+    paypalPlanQuarterly: paypalPlanQuarterly || "NOT_ACTIVE"
+  });
 
   res.json({
     razorpayKeyId: finalRazorpayKeyId,
@@ -1439,11 +1535,24 @@ app.post("/api/paypal/verify-subscription", authenticateFirebaseUser, async (req
 
     const clientId = process.env.VITE_PAYPAL_CLIENT_ID || process.env.PAYPAL_CLIENT_ID;
     const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
-    const apiUrl = process.env.PAYPAL_API_URL || "https://api-m.sandbox.paypal.com";
+    const apiUrl = getPaypalApiUrl();
 
-    if (!clientId || !clientSecret) {
-      console.error("[PayPal] Verification failed: PayPal credentials not configured on the server.");
-      return res.status(550).json({ error: "PayPal credentials are not configured on the server." });
+    // 1. Verify environment variables are present and loaded correctly
+    if (!clientId || !clientSecret || clientId.trim() === "" || clientSecret.trim() === "" || clientId === "undefined" || clientSecret === "undefined") {
+      console.error("[PayPal SDK] ERROR: Live PAYPAL_CLIENT_ID and/or PAYPAL_CLIENT_SECRET are missing or not loaded correctly from environment variables.");
+      return res.status(400).json({
+        success: false,
+        error: "PayPal integration is not fully configured. Live PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET are required on the server."
+      });
+    }
+
+    // 2. If subscription Plan ID is invalid, inactive, or missing, do not proceed and return a clear error
+    if (!planId || planId.trim() === "" || planId === "undefined" || planId.startsWith("P-3023") || planId.startsWith("P-5919")) {
+      console.error(`[PayPal SDK] ERROR: Subscription verification blocked. Plan ID "${planId}" is invalid, inactive, or unconfigured.`);
+      return res.status(400).json({
+        success: false,
+        error: "The PayPal subscription Plan ID is invalid, inactive, or belongs to a different developer environment. A valid Live PayPal Billing Plan ID is required."
+      });
     }
 
     // Authenticate with PayPal
@@ -1633,7 +1742,7 @@ app.post("/api/paypal/webhook", async (req, res) => {
     const webhookId = process.env.PAYPAL_WEBHOOK_ID;
     const clientId = process.env.VITE_PAYPAL_CLIENT_ID || process.env.PAYPAL_CLIENT_ID;
     const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
-    const apiUrl = process.env.PAYPAL_API_URL || "https://api-m.sandbox.paypal.com";
+    const apiUrl = getPaypalApiUrl();
 
     const event = req.body;
     const eventId = event.id;
@@ -1767,7 +1876,7 @@ app.post("/api/paypal/create-order", authenticateFirebaseUser, async (req: any, 
 
     const clientId = process.env.VITE_PAYPAL_CLIENT_ID || process.env.PAYPAL_CLIENT_ID;
     const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
-    const apiUrl = process.env.PAYPAL_API_URL || "https://api-m.sandbox.paypal.com";
+    const apiUrl = getPaypalApiUrl();
 
     if (!clientId || !clientSecret) {
       return res.status(400).json({ error: "PayPal credentials not configured on the server." });
@@ -1828,7 +1937,7 @@ app.post("/api/paypal/capture-order", authenticateFirebaseUser, async (req: any,
 
     const clientId = process.env.VITE_PAYPAL_CLIENT_ID || process.env.PAYPAL_CLIENT_ID;
     const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
-    const apiUrl = process.env.PAYPAL_API_URL || "https://api-m.sandbox.paypal.com";
+    const apiUrl = getPaypalApiUrl();
 
     if (!clientId || !clientSecret) {
       return res.status(400).json({ error: "PayPal credentials not configured on the server." });
