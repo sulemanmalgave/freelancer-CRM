@@ -21,13 +21,14 @@ import {
   Star,
   Zap,
   Download,
-  Monitor
+  Monitor,
+  Notebook
 } from "lucide-react";
 
 const logoIcon = "/icon-192.png";
 
 // Types
-import { FreelancerProfile, Client, Project, Task, Invoice, Lead, DocumentRecord } from "./types";
+import { FreelancerProfile, Client, Project, Task, Invoice, Lead, DocumentRecord, NoteRecord } from "./types";
 
 // Firebase Services
 import { db } from "./firebase";
@@ -41,6 +42,7 @@ import Onboarding from "./components/Onboarding";
 import UpgradeModal from "./components/UpgradeModal";
 import DashboardView from "./components/DashboardView";
 import ClientsView from "./components/ClientsView";
+import NotesRecordsView from "./components/NotesRecordsView";
 import ProjectsView from "./components/ProjectsView";
 import TasksView from "./components/TasksView";
 import InvoicesView from "./components/InvoicesView";
@@ -53,11 +55,15 @@ import PrivacyPolicyView from "./components/PrivacyPolicyView";
 export default function App() {
   const [profile, setProfile] = useState<FreelancerProfile | null>(null);
   const [clients, setClients] = useState<Client[]>([]);
+  const [records, setRecords] = useState<NoteRecord[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
+
+  // Filter state when navigating to Notes & Records from Client Details
+  const [notesClientFilter, setNotesClientFilter] = useState<string>("All");
 
   // System states
   const [activeView, setActiveView] = useState(() => {
@@ -161,6 +167,7 @@ export default function App() {
 
         // Load cached entities to boot instantly
         setClients(JSON.parse(localStorage.getItem(`crm_clients_${parsedProfile.id}`) || "[]"));
+        setRecords(JSON.parse(localStorage.getItem(`crm_records_${parsedProfile.id}`) || "[]"));
         setProjects(JSON.parse(localStorage.getItem(`crm_projects_${parsedProfile.id}`) || "[]"));
         setTasks(JSON.parse(localStorage.getItem(`crm_tasks_${parsedProfile.id}`) || "[]"));
         setInvoices(JSON.parse(localStorage.getItem(`crm_invoices_${parsedProfile.id}`) || "[]"));
@@ -192,8 +199,9 @@ export default function App() {
         const buildQuery = (col: string) => query(collection(db, col), where("freelancerId", "==", freelancerId));
 
         // Background fetching
-        const [clientsSnap, projectsSnap, tasksSnap, invoicesSnap, leadsSnap, docsSnap] = await Promise.all([
+        const [clientsSnap, recordsSnap, projectsSnap, tasksSnap, invoicesSnap, leadsSnap, docsSnap] = await Promise.all([
           getDocs(buildQuery("clients")),
+          getDocs(buildQuery("records")),
           getDocs(buildQuery("projects")),
           getDocs(buildQuery("tasks")),
           getDocs(buildQuery("invoices")),
@@ -202,6 +210,7 @@ export default function App() {
         ]);
 
         const pulledClients = clientsSnap.docs.map((d) => d.data() as Client);
+        const pulledRecords = recordsSnap.docs.map((d) => d.data() as NoteRecord);
         const pulledProjects = projectsSnap.docs.map((d) => d.data() as Project);
         const pulledTasks = tasksSnap.docs.map((d) => d.data() as Task);
         const pulledInvoices = invoicesSnap.docs.map((d) => d.data() as Invoice);
@@ -211,6 +220,9 @@ export default function App() {
         // Update local state and disk caches
         setClients(pulledClients);
         localStorage.setItem(`crm_clients_${freelancerId}`, JSON.stringify(pulledClients));
+
+        setRecords(pulledRecords);
+        localStorage.setItem(`crm_records_${freelancerId}`, JSON.stringify(pulledRecords));
 
         setProjects(pulledProjects);
         localStorage.setItem(`crm_projects_${freelancerId}`, JSON.stringify(pulledProjects));
@@ -338,6 +350,11 @@ export default function App() {
   // Clients Mutators
   const handleAddClient = (fields: Omit<Client, "id" | "freelancerId" | "createdAt">) => {
     if (!profile) return;
+    const isFree = profile.plan === "Free" && !profile.premium;
+    if (isFree && clients.length >= 10) {
+      triggerUpgrade("client_limit");
+      return;
+    }
     const newClient: Client = {
       ...fields,
       id: generateUUID(),
@@ -360,6 +377,41 @@ export default function App() {
     const newList = clients.filter((c) => c.id !== id);
     setClients(newList);
     saveEntity("clients", newList, { id, freelancerId: profile?.id || "" } as any, "delete");
+  };
+
+  // Notes & Records Mutators
+  const handleAddRecord = (fields: Omit<NoteRecord, "id" | "freelancerId" | "createdAt" | "updatedAt">) => {
+    if (!profile) return;
+    const now = new Date().toISOString();
+    const newRecord: NoteRecord = {
+      ...fields,
+      id: generateUUID(),
+      freelancerId: profile.id,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const newList = [newRecord, ...records];
+    setRecords(newList);
+    saveEntity("records", newList, newRecord);
+  };
+
+  const handleUpdateRecord = (id: string, fields: Partial<NoteRecord>) => {
+    const now = new Date().toISOString();
+    const updated = records.map((r) => (r.id === id ? { ...r, ...fields, updatedAt: now } : r));
+    setRecords(updated);
+    const item = updated.find((r) => r.id === id);
+    if (item) saveEntity("records", updated, item);
+  };
+
+  const handleDeleteRecord = (id: string) => {
+    const newList = records.filter((r) => r.id !== id);
+    setRecords(newList);
+    saveEntity("records", newList, { id, freelancerId: profile?.id || "" } as any, "delete");
+  };
+
+  const handleViewClientRecords = (clientId: string) => {
+    setNotesClientFilter(clientId);
+    setActiveView("Notes & Records");
   };
 
   // Projects Mutators
@@ -476,7 +528,8 @@ export default function App() {
 
   // Convert Lead to Verified Client (Delightful business convert helper)
   const handleConvertToClient = (lead: Lead) => {
-    if (profile?.plan === "Free" && clients.length >= 20) {
+    const isFree = (profile?.plan === "Free" || !profile?.plan) && !profile?.premium;
+    if (isFree && clients.length >= 10) {
       triggerUpgrade("client_limit");
       return;
     }
@@ -557,6 +610,7 @@ export default function App() {
   const menuItems = [
     { name: "Dashboard", icon: LayoutDashboard },
     { name: "Clients", icon: Users },
+    { name: "Notes & Records", icon: Notebook },
     { name: "Projects", icon: FolderGit2 },
     { name: "Tasks", icon: CheckSquare },
     { name: "Invoices", icon: FileText },
@@ -804,12 +858,26 @@ export default function App() {
               {activeView === "Clients" && (
                 <ClientsView
                   clients={clients}
+                  records={records}
                   profile={profile}
                   searchTerm={searchTerm}
                   onAddClient={handleAddClient}
                   onUpdateClient={handleUpdateClient}
                   onDeleteClient={handleDeleteClient}
                   onTriggerUpgrade={triggerUpgrade}
+                  onViewClientRecords={handleViewClientRecords}
+                />
+              )}
+
+              {activeView === "Notes & Records" && (
+                <NotesRecordsView
+                  records={records}
+                  clients={clients}
+                  profile={profile}
+                  initialClientIdFilter={notesClientFilter}
+                  onAddRecord={handleAddRecord}
+                  onUpdateRecord={handleUpdateRecord}
+                  onDeleteRecord={handleDeleteRecord}
                 />
               )}
 

@@ -746,7 +746,7 @@ export default function UpgradeModal({
   };
 
   const featureComparison = [
-    { name: "Active Clients Limit", free: "Max 20 clients", pro: "Unlimited Clients" },
+    { name: "Active Clients Limit", free: "Max 10 clients", pro: "Unlimited Clients" },
     { name: "Projects Limit", free: "Max 10 active", pro: "Unlimited Projects" },
     { name: "Invoices Access", free: "Basic (Draft only)", pro: "Unlimited Invoices & PDF export" },
     { name: "Secure Document Vault", free: "Locked", pro: "Contracts & Asset Back-Loader" },
@@ -798,7 +798,7 @@ export default function UpgradeModal({
             <div className="mt-4 p-2.5 rounded-lg bg-amber-500/15 border border-amber-500/20 text-yellow-100 text-xs flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-amber-300 shrink-0" />
               <span>
-                {triggerReason === "client_limit" && "You reached the limit of 20 Clients on the Free Plan."}
+                {triggerReason === "client_limit" && "You reached the limit of 10 Clients on the Free Plan. Upgrade your plan to add more clients."}
                 {triggerReason === "project_limit" && "You reached the limit of 10 Projects on the Free Plan."}
                 {triggerReason === "document_storage" && "Document Storage (Contracts & Files) is a Pro feature."}
                 {triggerReason === "advanced_charts" && "Advanced revenue breakout reports are a Pro feature."}
@@ -910,7 +910,7 @@ export default function UpgradeModal({
                           )}
                         </button>
                         <p className="text-[10px] text-slate-400 text-center">
-                          Downgrading will re-enforce the standard limits (20 clients, 10 projects) instantly.
+                          Downgrading will re-enforce the standard limits (10 clients, 10 projects) instantly.
                         </p>
                       </div>
                     </div>

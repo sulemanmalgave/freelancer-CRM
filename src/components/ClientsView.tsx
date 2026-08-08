@@ -1,26 +1,30 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Plus, Search, Edit3, Trash2, Mail, Phone, Users, Check, X, ShieldAlert, FileText, Sparkles, ChevronDown, ChevronUp, Link2, PlusCircle, ExternalLink } from "lucide-react";
-import { Client, FreelancerProfile } from "../types";
+import { Client, FreelancerProfile, NoteRecord } from "../types";
 
 interface ClientsViewProps {
   clients: Client[];
+  records?: NoteRecord[];
   profile: FreelancerProfile;
   searchTerm: string;
   onAddClient: (client: Omit<Client, "id" | "freelancerId" | "createdAt">) => void;
   onUpdateClient: (id: string, client: Partial<Client>) => void;
   onDeleteClient: (id: string) => void;
   onTriggerUpgrade: (reason: string) => void;
+  onViewClientRecords?: (clientId: string) => void;
 }
 
 export default function ClientsView({
   clients,
+  records = [],
   profile,
   searchTerm,
   onAddClient,
   onUpdateClient,
   onDeleteClient,
   onTriggerUpgrade,
+  onViewClientRecords,
 }: ClientsViewProps) {
   const isFree = profile.plan === "Free" && !profile.premium;
   const [isAdding, setIsAdding] = useState(false);
@@ -65,7 +69,7 @@ export default function ClientsView({
   };
 
   const handleOpenAdd = () => {
-    if (isFree && clients.length >= 20) {
+    if (isFree && clients.length >= 10) {
       onTriggerUpgrade("client_limit");
       return;
     }
@@ -202,6 +206,57 @@ export default function ClientsView({
 
   return (
     <div className="space-y-6">
+      {/* Free Plan Client Limit Banner */}
+      {isFree && clients.length > 10 && (
+        <div className="p-3.5 bg-indigo-50/90 border border-indigo-200/80 rounded-2xl text-indigo-900 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 font-medium shadow-sm">
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 bg-indigo-600 text-white rounded-xl shrink-0 shadow-xs">
+              <Sparkles size={15} />
+            </div>
+            <div>
+              <p className="font-bold text-indigo-950 text-xs">
+                Your {clients.length} existing clients are preserved
+              </p>
+              <p className="text-[11px] text-indigo-700/90 mt-0.5">
+                The Free Plan limit is now 10 clients. All your existing client data is safe and fully accessible. Upgrade to Pro to add new clients.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onTriggerUpgrade("client_limit")}
+            className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all text-xs shrink-0 cursor-pointer shadow-sm shadow-indigo-600/20"
+          >
+            Upgrade Plan
+          </button>
+        </div>
+      )}
+
+      {isFree && clients.length === 10 && (
+        <div className="p-3.5 bg-amber-50/90 border border-amber-200/80 rounded-2xl text-amber-900 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 font-medium shadow-sm">
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 bg-amber-600 text-white rounded-xl shrink-0 shadow-xs">
+              <ShieldAlert size={15} />
+            </div>
+            <div>
+              <p className="font-bold text-amber-950 text-xs">
+                You've reached the 10-client limit on the Free Plan
+              </p>
+              <p className="text-[11px] text-amber-800/90 mt-0.5">
+                Upgrade your plan to add more clients and unlock unlimited workspace capabilities.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onTriggerUpgrade("client_limit")}
+            className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl transition-all text-xs shrink-0 cursor-pointer shadow-sm shadow-amber-600/20"
+          >
+            Upgrade
+          </button>
+        </div>
+      )}
+
       {/* Search and Action Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-2">
@@ -222,8 +277,15 @@ export default function ClientsView({
 
         <div className="flex items-center gap-2">
           {isFree && (
-            <span className="text-[11px] text-slate-400 font-medium">
-              Clients: <strong>{clients.length}/20</strong>
+            <span className="text-[11px] text-slate-500 font-medium flex items-center gap-1.5">
+              <span>
+                Clients: <strong>{clients.length}</strong>{clients.length <= 10 ? "/10" : " (Limit: 10)"}
+              </span>
+              {clients.length > 10 && (
+                <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded-full text-[10px] font-bold">
+                  Preserved
+                </span>
+              )}
             </span>
           )}
           <button
@@ -630,6 +692,49 @@ export default function ClientsView({
                     )}
                   </div>
                 </div>
+
+                {/* Notes & Records Summary Card */}
+                {selectedClientForDetails && (
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Notes & Records</h4>
+                    {(() => {
+                      const clientNotes = records.filter(
+                        (r) => r.clientId === selectedClientForDetails.id && r.type === "note"
+                      );
+                      const clientVoices = records.filter(
+                        (r) => r.clientId === selectedClientForDetails.id && r.type === "voice_recording"
+                      );
+                      return (
+                        <div className="p-4 bg-indigo-50/40 border border-indigo-100 rounded-xl flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg shrink-0">
+                              <FileText size={16} />
+                            </div>
+                            <div>
+                              <p className="font-bold text-xs text-slate-800">Notes & Voice Records</p>
+                              <p className="text-[11px] text-slate-500 mt-0.5">
+                                {clientNotes.length} {clientNotes.length === 1 ? "Note" : "Notes"} &bull;{" "}
+                                {clientVoices.length} {clientVoices.length === 1 ? "Voice Recording" : "Voice Recordings"}
+                              </p>
+                            </div>
+                          </div>
+                          {onViewClientRecords && (
+                            <button
+                              onClick={() => {
+                                const cId = selectedClientForDetails.id;
+                                setSelectedClientForDetails(null);
+                                onViewClientRecords(cId);
+                              }}
+                              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1 cursor-pointer shrink-0"
+                            >
+                              <span>View Records</span>
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
 
                 {/* Important Links Section */}
                 <div className="space-y-2">

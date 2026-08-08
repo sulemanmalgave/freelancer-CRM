@@ -146,7 +146,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
                 )}
                 <div className="font-bold text-slate-900">Free Plan</div>
                 <div className="text-[11px] text-slate-400 mt-1">
-                  Upto 20 clients, 10 projects, basic analytics.
+                  Upto 10 clients, 10 projects, basic analytics.
                 </div>
               </div>
 

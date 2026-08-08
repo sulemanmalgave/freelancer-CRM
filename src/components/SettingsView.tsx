@@ -217,7 +217,7 @@ export default function SettingsView({
                 <span>Free Plan Workspace</span>
               </div>
               <p className="text-[10px] text-slate-400 leading-normal">
-                Tier limits of up to 20 clients and 10 projects are active. Subscribe to unlock unlimited records.
+                Tier limits of up to 10 clients and 10 projects are active. Subscribe to unlock unlimited records.
               </p>
               <div className="flex flex-col gap-1.5 pt-1.5">
                 <button

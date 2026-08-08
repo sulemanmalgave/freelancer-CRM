@@ -112,3 +112,21 @@ export interface DocumentRecord {
   content: string; // base64 encoded document body
   createdAt: string;
 }
+
+export interface NoteRecord {
+  id: string;
+  freelancerId: string;
+  clientId: string;
+  type: "note" | "voice_recording";
+  title?: string;
+  content?: string; // Note content
+  description?: string; // Voice recording description
+  audioFileName?: string;
+  audioFileType?: string;
+  audioFileSize?: string;
+  audioFileUrl?: string; // Data URL or storage reference
+  duration?: number; // duration in seconds
+  createdAt: string;
+  updatedAt: string;
+}
+
