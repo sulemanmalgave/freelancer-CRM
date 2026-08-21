@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
+import { Analytics } from '@vercel/analytics/react';
 import {
   LayoutDashboard,
   Users,
@@ -1032,6 +1033,7 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+      <Analytics />
     </div>
   );
 }
