@@ -1,6 +1,23 @@
+import React, { useMemo, memo } from "react";
 import { motion } from "motion/react";
-import { Users, FolderGit2, FileText, Sparkles, Plus, Clock, ExternalLink } from "lucide-react";
-import { Client, Project, Invoice, Lead } from "../types";
+import {
+  Users,
+  FolderGit2,
+  FileText,
+  Sparkles,
+  Plus,
+  Clock,
+  ExternalLink,
+  Calendar,
+  AlertCircle,
+  CheckCircle2,
+  Receipt,
+  FileCheck2,
+  Send,
+  Zap,
+  Briefcase,
+} from "lucide-react";
+import { Client, Project, Invoice, Lead, FollowUp, Proposal } from "../types";
 import { formatCurrency } from "../utils";
 
 interface DashboardViewProps {
@@ -8,77 +25,120 @@ interface DashboardViewProps {
   projects: Project[];
   invoices: Invoice[];
   leads: Lead[];
+  followUps?: FollowUp[];
+  proposals?: Proposal[];
   currency: string;
   onNavigate: (view: string) => void;
   onQuickAdd: (action: string) => void;
+  onToggleFollowUp?: (followUp: FollowUp) => void;
+  onOpenInvoiceReminder?: (invoice: Invoice) => void;
+  onOpenFollowUpModal?: () => void;
 }
 
-export default function DashboardView({
+function DashboardView({
   clients,
   projects,
   invoices,
   leads,
+  followUps = [],
+  proposals = [],
   currency,
   onNavigate,
   onQuickAdd,
+  onToggleFollowUp,
+  onOpenInvoiceReminder,
+  onOpenFollowUpModal,
 }: DashboardViewProps) {
-  // Compute metric numbers
   const totalClients = clients.length;
-  const activeProjects = projects.filter((p) => p.status === "In Progress" || p.status === "Not Started").length;
-  const pendingInvoices = invoices.filter((i) => i.status === "Sent" || i.status === "Draft").length;
+  const activeProjects = useMemo(() => {
+    return projects.filter(
+      (p) => p.status === "In Progress" || p.status === "Not Started"
+    ).length;
+  }, [projects]);
 
-  // Revenue this month: sum of Paid invoices with issueDate within current calendar month
+  const pendingInvoices = useMemo(() => {
+    return invoices.filter(
+      (i) => i.status === "Sent" || i.status === "Draft"
+    ).length;
+  }, [invoices]);
+
   const now = new Date();
-  const currentMonth = now.getMonth(); // 0-indexed
+  const currentMonth = now.getMonth();
   const currentYear = now.getFullYear();
+  const todayStr = now.toISOString().split("T")[0];
 
-  const paidInvoicesThisMonth = invoices.filter((inv) => {
-    if (inv.status !== "Paid") return false;
-    try {
-      const issueDate = new Date(inv.issueDate);
-      return issueDate.getMonth() === currentMonth && issueDate.getFullYear() === currentYear;
-    } catch (e) {
-      return false;
-    }
-  });
+  const { paidInvoicesThisMonth, revenueThisMonth, overdueInvoices, pendingBillsList } = useMemo(() => {
+    const paidThisMonth = invoices.filter((inv) => {
+      if (inv.status !== "Paid") return false;
+      try {
+        const issueDate = new Date(inv.issueDate);
+        return (
+          issueDate.getMonth() === currentMonth &&
+          issueDate.getFullYear() === currentYear
+        );
+      } catch {
+        return false;
+      }
+    });
 
-  const revenueThisMonth = paidInvoicesThisMonth.reduce((acc, inv) => {
-    const linesTotal = inv.services.reduce((sum, s) => sum + s.quantity * s.rate, 0);
-    const taxAddon = linesTotal * (inv.taxRate / 100);
-    return acc + linesTotal + taxAddon;
-  }, 0);
+    const rev = paidThisMonth.reduce((acc, inv) => {
+      const linesTotal = inv.services.reduce(
+        (sum, s) => sum + s.quantity * s.rate,
+        0
+      );
+      const taxAddon = linesTotal * ((inv.taxRate || 0) / 100);
+      return acc + linesTotal + taxAddon;
+    }, 0);
 
-  // Upcoming follow ups: leads with followUpDate in the prospective future
-  const upcomingFollowups = leads.filter((l) => {
-    if (!l.followUpDate) return false;
-    try {
-      const fDate = new Date(l.followUpDate);
-      fDate.setHours(23, 59, 59, 999);
-      return fDate >= now && l.status !== "Won" && l.status !== "Lost";
-    } catch {
-      return false;
-    }
-  }).length;
+    const overdue = invoices.filter((inv) => {
+      if (inv.status === "Paid") return false;
+      return inv.dueDate < todayStr || inv.status === "Overdue";
+    });
 
-  // Let's grab some active things for quick dashboard glance
-  const recentClients = [...clients]
-    .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
-    .slice(0, 3);
+    const pendingBills = [...invoices]
+      .filter((i) => i.status === "Sent" || i.status === "Draft")
+      .sort(
+        (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
+      )
+      .slice(0, 4);
 
-  const urgentProjects = [...projects]
-    .filter((p) => p.status !== "Completed" && p.deadline)
-    .sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime())
-    .slice(0, 3);
+    return {
+      paidInvoicesThisMonth: paidThisMonth,
+      revenueThisMonth: rev,
+      overdueInvoices: overdue,
+      pendingBillsList: pendingBills,
+    };
+  }, [invoices, currentMonth, currentYear, todayStr]);
 
-  const pendingBillsList = [...invoices]
-    .filter((i) => i.status === "Sent")
-    .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
-    .slice(0, 3);
+  // Active follow-ups due today or overdue
+  const { overdueFollowUps, todayFollowUps } = useMemo(() => {
+    const overdueF = followUps.filter((f) => {
+      if (f.status === "completed") return false;
+      const d = f.dueDate.includes("T") ? f.dueDate.split("T")[0] : f.dueDate;
+      return d < todayStr;
+    });
 
-  // Helper mapping client ID to Company/Contact
+    const todayF = followUps.filter((f) => {
+      if (f.status === "completed") return false;
+      const d = f.dueDate.includes("T") ? f.dueDate.split("T")[0] : f.dueDate;
+      return d === todayStr;
+    });
+
+    return { overdueFollowUps: overdueF, todayFollowUps: todayF };
+  }, [followUps, todayStr]);
+
+  const urgentProjects = useMemo(() => {
+    return [...projects]
+      .filter((p) => p.status !== "Completed" && p.deadline)
+      .sort(
+        (a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime()
+      )
+      .slice(0, 4);
+  }, [projects]);
+
   const getClientMeta = (cId: string) => {
     const c = clients.find((item) => item.id === cId);
-    return c ? `${c.companyName} (${c.contactPerson})` : "Direct Project";
+    return c ? `${c.companyName} (${c.contactPerson})` : "Direct Client";
   };
 
   const getCurrencySymbol = (code: string) => {
@@ -88,174 +148,282 @@ export default function DashboardView({
     return "$";
   };
 
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.04,
+        delayChildren: 0.02,
+      },
+    },
+  };
+
+  const itemVariants = {
+    hidden: { opacity: 0, y: 8, scale: 0.99 },
+    show: {
+      opacity: 1,
+      y: 0,
+      scale: 1,
+      transition: { duration: 0.2, ease: "easeOut" as const },
+    },
+  };
+
   return (
-    <div className="space-y-8 select-none">
+    <motion.div
+      variants={containerVariants}
+      initial="hidden"
+      animate="show"
+      className="space-y-6 select-none"
+    >
       {/* Welcome Banner */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 rounded-2xl glass-panel bg-white/20 border-indigo-200/20 shadow-md">
+      <motion.div
+        variants={itemVariants}
+        className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 rounded-2xl glass-panel bg-white/40 border-indigo-200/40 shadow-sm"
+      >
         <div>
-          <h2 className="text-xl md:text-2xl font-extrabold text-slate-800 flex items-center gap-2">
+          <h2 className="text-xl md:text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <span>Workspace Operations Control</span>
             <Sparkles className="w-5 h-5 text-indigo-500 animate-pulse" />
           </h2>
-          <p className="text-sm text-slate-500 mt-1">
-            Real-time visual monitoring of client conversions, active milestones, and automated cashflows.
+          <p className="text-xs text-slate-500 mt-1">
+            Real-time monitoring of client communications, active deliverables, smart follow-ups, and automated cashflows.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button
+          <motion.button
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.96 }}
             onClick={() => onQuickAdd("client")}
-            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-all shadow-md shadow-indigo-600/10 hover:-translate-y-0.5 cursor-pointer"
+            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-all shadow-xs cursor-pointer"
           >
             <Plus size={14} />
             <span>Add Client</span>
-          </button>
-          <button
-            onClick={() => onQuickAdd("project")}
-            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 hover:text-slate-950 border border-white/40 bg-white/35 hover:bg-white/50 rounded-xl backdrop-blur-md transition-all hover:-translate-y-0.5 cursor-pointer"
+          </motion.button>
+          <motion.button
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.96 }}
+            onClick={() => (onOpenFollowUpModal ? onOpenFollowUpModal() : onQuickAdd("followup"))}
+            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl transition-all cursor-pointer"
           >
-            <Plus size={14} />
-            <span>New Project</span>
-          </button>
-          <button
+            <Clock size={14} />
+            <span>Follow-up</span>
+          </motion.button>
+          <motion.button
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.96 }}
             onClick={() => onQuickAdd("invoice")}
-            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 hover:text-slate-950 border border-white/40 bg-white/35 hover:bg-white/50 rounded-xl backdrop-blur-md transition-all hover:-translate-y-0.5 cursor-pointer"
+            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-slate-700 hover:text-slate-950 border border-slate-200 bg-white hover:bg-slate-50 rounded-xl transition-all cursor-pointer shadow-xs"
           >
-            <Plus size={14} />
-            <span>Create Invoice</span>
-          </button>
+            <Receipt size={14} />
+            <span>Invoice</span>
+          </motion.button>
+          <motion.button
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.96 }}
+            onClick={() => onQuickAdd("proposal")}
+            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-xl transition-all cursor-pointer"
+          >
+            <FileCheck2 size={14} />
+            <span>Proposal</span>
+          </motion.button>
         </div>
-      </div>
+      </motion.div>
+
+      {/* Action Required Alert Strip (Overdue Follow-ups or Invoices) */}
+      {(overdueFollowUps.length > 0 || overdueInvoices.length > 0) && (
+        <motion.div
+          variants={itemVariants}
+          className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs"
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-amber-100 text-amber-700 rounded-xl shrink-0">
+              <AlertCircle size={18} />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-amber-900">
+                Action Items Requiring Your Attention
+              </h4>
+              <p className="text-[11px] text-amber-700 mt-0.5">
+                {overdueFollowUps.length > 0 && `${overdueFollowUps.length} follow-up${overdueFollowUps.length > 1 ? "s" : ""} overdue. `}
+                {overdueInvoices.length > 0 && `${overdueInvoices.length} invoice${overdueInvoices.length > 1 ? "s" : ""} awaiting overdue reminder.`}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {overdueInvoices.length > 0 && onOpenInvoiceReminder && (
+              <button
+                onClick={() => onOpenInvoiceReminder(overdueInvoices[0])}
+                className="px-3 py-1.5 bg-white text-amber-800 hover:bg-amber-100 border border-amber-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+              >
+                <Send size={12} />
+                <span>Send Invoice Reminder</span>
+              </button>
+            )}
+            <button
+              onClick={() => onNavigate("Calendar")}
+              className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+            >
+              View Schedule
+            </button>
+          </div>
+        </motion.div>
+      )}
 
       {/* Grid KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+      <motion.div variants={containerVariants} className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         {/* Total Clients */}
-        <div
+        <motion.div
+          variants={itemVariants}
+          whileHover={{ y: -3, transition: { duration: 0.15 } }}
+          whileTap={{ scale: 0.98 }}
           onClick={() => onNavigate("Clients")}
-          className="cursor-pointer p-4 rounded-2xl glass-panel glass-highlight hover:border-indigo-305 transition-all flex flex-col justify-between"
+          className="cursor-pointer p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs hover:border-indigo-300 transition-all flex flex-col justify-between"
         >
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">
-              Total Clients
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+              Clients
             </span>
-            <div className="p-1.5 bg-indigo-50/55 rounded-xl text-indigo-600">
+            <div className="p-1.5 bg-indigo-50 rounded-xl text-indigo-600">
               <Users className="w-4 h-4" />
             </div>
           </div>
           <div>
-            <span className="text-2xl font-extrabold text-slate-800">
-              {totalClients}
-            </span>
-            <div className="flex items-center gap-1 mt-1 text-[10px] text-emerald-500 font-semibold">
-              <span>Database Sync Active</span>
-            </div>
+            <span className="text-xl font-extrabold text-slate-900">{totalClients}</span>
+            <span className="text-[10px] text-emerald-600 font-semibold block mt-0.5">Active Directory</span>
           </div>
-        </div>
+        </motion.div>
 
         {/* Active Projects */}
-        <div
+        <motion.div
+          variants={itemVariants}
+          whileHover={{ y: -3, transition: { duration: 0.15 } }}
+          whileTap={{ scale: 0.98 }}
           onClick={() => onNavigate("Projects")}
-          className="cursor-pointer p-4 rounded-2xl glass-panel glass-highlight hover:border-sky-305 transition-all flex flex-col justify-between"
+          className="cursor-pointer p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs hover:border-sky-300 transition-all flex flex-col justify-between"
         >
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">
-              Active Milestones
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+              Projects
             </span>
-            <div className="p-1.5 bg-sky-50/55 rounded-xl text-sky-600">
+            <div className="p-1.5 bg-sky-50 rounded-xl text-sky-600">
               <FolderGit2 className="w-4 h-4" />
             </div>
           </div>
           <div>
-            <span className="text-2xl font-extrabold text-slate-800">
-              {activeProjects}
-            </span>
-            <div className="flex items-center gap-1 mt-1 text-[10px] text-slate-400">
-              <span>Delivery Pipeline</span>
-            </div>
+            <span className="text-xl font-extrabold text-slate-900">{activeProjects}</span>
+            <span className="text-[10px] text-slate-500 block mt-0.5">In Progress</span>
           </div>
-        </div>
+        </motion.div>
 
         {/* Pending Invoices */}
-        <div
+        <motion.div
+          variants={itemVariants}
+          whileHover={{ y: -3, transition: { duration: 0.15 } }}
+          whileTap={{ scale: 0.98 }}
           onClick={() => onNavigate("Invoices")}
-          className="cursor-pointer p-4 rounded-2xl glass-panel glass-highlight hover:border-amber-305 transition-all flex flex-col justify-between"
+          className="cursor-pointer p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs hover:border-amber-300 transition-all flex flex-col justify-between"
         >
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">
-              Pending Invoices
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+              Invoices
             </span>
-            <div className="p-1.5 bg-amber-50/55 rounded-xl text-amber-600">
+            <div className="p-1.5 bg-amber-50 rounded-xl text-amber-600">
               <FileText className="w-4 h-4" />
             </div>
           </div>
           <div>
-            <span className="text-2xl font-extrabold text-slate-800">
-              {pendingInvoices}
-            </span>
-            <div className="flex items-center gap-1 mt-1 text-[10px] text-amber-500">
-              <span>Awaiting client payment</span>
-            </div>
+            <span className="text-xl font-extrabold text-slate-900">{pendingInvoices}</span>
+            <span className="text-[10px] text-amber-600 font-semibold block mt-0.5">Pending Payment</span>
           </div>
-        </div>
+        </motion.div>
 
         {/* Revenue This Month */}
-        <div
+        <motion.div
+          variants={itemVariants}
+          whileHover={{ y: -3, transition: { duration: 0.15 } }}
+          whileTap={{ scale: 0.98 }}
           onClick={() => onNavigate("Revenue")}
-          className="cursor-pointer p-4 rounded-2xl glass-panel glass-highlight hover:border-emerald-305 transition-all flex flex-col justify-between col-span-2 lg:col-span-1"
+          className="cursor-pointer p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs hover:border-emerald-300 transition-all flex flex-col justify-between"
         >
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">
-              Paid This Month
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+              This Month
             </span>
-            <div className="p-1.5 bg-emerald-50/55 rounded-xl text-emerald-600">
-              <span className="text-xs font-bold font-mono">{getCurrencySymbol(currency)}</span>
+            <div className="p-1.5 bg-emerald-50 rounded-xl text-emerald-600 font-bold font-mono text-xs">
+              {getCurrencySymbol(currency)}
             </div>
           </div>
           <div>
-            <span className="text-2xl font-extrabold text-slate-800 truncate block">
+            <span className="text-xl font-extrabold text-slate-900 truncate block">
               {formatCurrency(revenueThisMonth, currency)}
             </span>
-            <div className="flex items-center gap-1 mt-1 text-[10px] text-emerald-500 font-semibold">
-              <span>Received Clear Fees</span>
+            <span className="text-[10px] text-emerald-600 font-semibold block mt-0.5">Collected</span>
+          </div>
+        </motion.div>
+
+        {/* Proposals */}
+        <motion.div
+          variants={itemVariants}
+          whileHover={{ y: -3, transition: { duration: 0.15 } }}
+          whileTap={{ scale: 0.98 }}
+          onClick={() => onNavigate("Proposals")}
+          className="cursor-pointer p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs hover:border-purple-300 transition-all flex flex-col justify-between"
+        >
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+              Proposals
+            </span>
+            <div className="p-1.5 bg-purple-50 rounded-xl text-purple-600">
+              <FileCheck2 className="w-4 h-4" />
             </div>
           </div>
-        </div>
-
-        {/* Upcoming Follow-ups */}
-        <div
-          onClick={() => onNavigate("Leads")}
-          className="cursor-pointer p-4 rounded-2xl glass-panel glass-highlight hover:border-violet-305 transition-all flex flex-col justify-between"
-        >
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">
-              Key Follow-ups
+          <div>
+            <span className="text-xl font-extrabold text-slate-900">{proposals.length}</span>
+            <span className="text-[10px] text-purple-600 font-semibold block mt-0.5">
+              {proposals.filter((p) => p.status === "Accepted").length} Accepted
             </span>
-            <div className="p-1.5 bg-violet-50/55 rounded-xl text-violet-600">
+          </div>
+        </motion.div>
+
+        {/* Follow-ups Today */}
+        <motion.div
+          variants={itemVariants}
+          whileHover={{ y: -3, transition: { duration: 0.15 } }}
+          whileTap={{ scale: 0.98 }}
+          onClick={() => onNavigate("Calendar")}
+          className="cursor-pointer p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs hover:border-amber-300 transition-all flex flex-col justify-between"
+        >
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+              Follow-ups
+            </span>
+            <div className="p-1.5 bg-amber-50 rounded-xl text-amber-600">
               <Clock className="w-4 h-4" />
             </div>
           </div>
           <div>
-            <span className="text-2xl font-extrabold text-slate-800">
-              {upcomingFollowups}
+            <span className="text-xl font-extrabold text-slate-900">
+              {todayFollowUps.length + overdueFollowUps.length}
             </span>
-            <div className="flex items-center gap-1 mt-1 text-[10px] text-violet-500">
-              <span>Warm lead queue</span>
-            </div>
+            <span className="text-[10px] text-amber-600 font-semibold block mt-0.5">Due / Overdue</span>
           </div>
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
 
       {/* Grid Lists Detail */}
-      <div className="grid md:grid-cols-2 gap-6">
-        {/* Overdue/Near Deadline Projects */}
-        <div className="p-5 rounded-2xl glass-panel">
-          <div className="flex items-center justify-between border-b border-black/5 pb-3 mb-4">
-            <h3 className="font-bold text-sm text-slate-800 uppercase tracking-wider flex items-center gap-2">
-              <FolderGit2 size={16} className="text-indigo-500" />
+      <motion.div variants={itemVariants} className="grid md:grid-cols-2 gap-6">
+        {/* Project Deadlines */}
+        <div className="p-5 rounded-2xl bg-white border border-slate-200/80 shadow-xs">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+            <h3 className="font-bold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-2">
+              <FolderGit2 size={16} className="text-indigo-600" />
               <span>Project Delivery Deadlines</span>
             </h3>
             <button
               onClick={() => onNavigate("Projects")}
-              className="text-xs text-indigo-600 hover:underline flex items-center gap-0.5 cursor-pointer"
+              className="text-xs font-semibold text-indigo-600 hover:underline flex items-center gap-0.5 cursor-pointer"
             >
               <span>View All</span>
               <ExternalLink size={12} />
@@ -264,33 +432,33 @@ export default function DashboardView({
 
           {urgentProjects.length === 0 ? (
             <div className="text-center py-8 text-xs text-slate-400">
-              No active projects with deadlines. Enjoy some quiet days!
+              No active projects with deadlines.
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-2.5">
               {urgentProjects.map((p) => (
                 <div
                   key={p.id}
                   onClick={() => onNavigate("Projects")}
-                  className="p-3 glass-item rounded-xl cursor-pointer transition-all flex items-center justify-between"
+                  className="p-3 bg-slate-50 hover:bg-slate-100/80 border border-slate-100 rounded-xl cursor-pointer transition-all flex items-center justify-between text-xs"
                 >
-                  <div>
-                    <h4 className="text-xs font-bold text-slate-800 line-clamp-1">
-                      {p.title}
-                    </h4>
-                    <span className="text-[10px] text-slate-400 mt-0.5 block line-clamp-1">
-                      Client: {getClientMeta(p.clientId)}
+                  <div className="min-w-0 pr-2">
+                    <h4 className="font-bold text-slate-800 truncate">{p.title}</h4>
+                    <span className="text-[11px] text-slate-400 mt-0.5 block truncate">
+                      {getClientMeta(p.clientId)}
                     </span>
                   </div>
-                  <div className="text-right">
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                      new Date(p.deadline) < new Date()
-                        ? "bg-red-500/10 text-red-600"
-                        : "bg-sky-500/10 text-sky-600"
-                    }`}>
+                  <div className="text-right shrink-0">
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        new Date(p.deadline) < new Date()
+                          ? "bg-red-50 text-red-600 border border-red-200"
+                          : "bg-sky-50 text-sky-600 border border-sky-200"
+                      }`}
+                    >
                       {p.deadline ? new Date(p.deadline).toLocaleDateString() : "No Date"}
                     </span>
-                    <span className="text-[10px] text-slate-400 mt-1 block font-medium font-mono">
+                    <span className="text-[11px] text-slate-700 font-bold block mt-1 font-mono">
                       {formatCurrency(p.budget, currency)}
                     </span>
                   </div>
@@ -300,16 +468,16 @@ export default function DashboardView({
           )}
         </div>
 
-        {/* Outstanding Invoices */}
-        <div className="p-5 rounded-2xl glass-panel">
-          <div className="flex items-center justify-between border-b border-black/5 pb-3 mb-4">
-            <h3 className="font-bold text-sm text-slate-800 uppercase tracking-wider flex items-center gap-2">
-              <FileText size={16} className="text-indigo-500" />
+        {/* Outstanding Invoices & Follow-ups */}
+        <div className="p-5 rounded-2xl bg-white border border-slate-200/80 shadow-xs">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+            <h3 className="font-bold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-2">
+              <FileText size={16} className="text-emerald-600" />
               <span>Awaiting Client Payments</span>
             </h3>
             <button
               onClick={() => onNavigate("Invoices")}
-              className="text-xs text-indigo-600 hover:underline flex items-center gap-0.5 cursor-pointer"
+              className="text-xs font-semibold text-indigo-600 hover:underline flex items-center gap-0.5 cursor-pointer"
             >
               <span>View Invoices</span>
               <ExternalLink size={12} />
@@ -321,31 +489,54 @@ export default function DashboardView({
               No outstanding sent invoices. Great work tracking accounts!
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-2.5">
               {pendingBillsList.map((inv) => {
-                const total = inv.services.reduce((accum, s) => accum + s.quantity * s.rate, 0);
-                const tax = total * (inv.taxRate / 100);
+                const total = inv.services.reduce(
+                  (accum, s) => accum + s.quantity * s.rate,
+                  0
+                );
+                const tax = total * ((inv.taxRate || 0) / 100);
+                const isOverdue = inv.dueDate < todayStr;
+
                 return (
                   <div
                     key={inv.id}
-                    onClick={() => onNavigate("Invoices")}
-                    className="p-3 glass-item rounded-xl cursor-pointer transition-all flex items-center justify-between"
+                    className="p-3 bg-slate-50 border border-slate-100 rounded-xl transition-all flex items-center justify-between text-xs"
                   >
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-800">
-                        {inv.invoiceNumber}
-                      </h4>
-                      <span className="text-[10px] text-slate-400 mt-0.5 block line-clamp-1">
-                        To: {getClientMeta(inv.clientId)}
+                    <div className="min-w-0 pr-2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-bold text-slate-900">
+                          #{inv.invoiceNumber}
+                        </span>
+                        {isOverdue && (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 bg-red-100 text-red-700 rounded-md">
+                            Overdue
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[11px] text-slate-400 mt-0.5 block truncate">
+                        {getClientMeta(inv.clientId)}
                       </span>
                     </div>
-                    <div className="text-right">
-                      <span className="text-xs font-bold text-indigo-605 font-mono block">
-                        {formatCurrency(total + tax, currency)}
-                      </span>
-                      <span className="text-[10px] text-amber-500 font-medium block mt-0.5 font-sans">
-                        Due: {new Date(inv.dueDate).toLocaleDateString()}
-                      </span>
+
+                    <div className="flex items-center gap-3 shrink-0">
+                      <div className="text-right">
+                        <span className="font-bold text-slate-900 font-mono block">
+                          {formatCurrency(total + tax, currency)}
+                        </span>
+                        <span className="text-[10px] text-slate-500 block mt-0.5">
+                          Due: {inv.dueDate}
+                        </span>
+                      </div>
+                      {onOpenInvoiceReminder && (
+                        <button
+                          onClick={() => onOpenInvoiceReminder(inv)}
+                          className="p-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg transition-colors cursor-pointer"
+                          title="Send payment reminder"
+                        >
+                          <Send size={13} />
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -353,7 +544,9 @@ export default function DashboardView({
             </div>
           )}
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }
+
+export default memo(DashboardView);

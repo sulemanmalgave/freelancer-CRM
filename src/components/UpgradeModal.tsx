@@ -36,23 +36,26 @@ interface UpgradeModalProps {
 
 const getCountryName = (code: string) => {
   try {
-    const regionNames = new Intl.DisplayNames(["en"], { type: "region" });
-    return regionNames.of(code) || code;
+    if (typeof Intl !== "undefined" && typeof (Intl as any).DisplayNames === "function") {
+      const regionNames = new (Intl as any).DisplayNames(["en"], { type: "region" });
+      return regionNames.of(code) || code;
+    }
   } catch (e) {
-    const countryNames: Record<string, string> = {
-      IN: "India",
-      US: "United States",
-      GB: "United Kingdom",
-      CA: "Canada",
-      AU: "Australia",
-      DE: "Germany",
-      FR: "France",
-      SG: "Singapore",
-      AE: "United Arab Emirates",
-      JP: "Japan"
-    };
-    return countryNames[code] || code;
+    // fallback
   }
+  const countryNames: Record<string, string> = {
+    IN: "India",
+    US: "United States",
+    GB: "United Kingdom",
+    CA: "Canada",
+    AU: "Australia",
+    DE: "Germany",
+    FR: "France",
+    SG: "Singapore",
+    AE: "United Arab Emirates",
+    JP: "Japan"
+  };
+  return countryNames[code] || code;
 };
 
 export default function UpgradeModal({
@@ -748,6 +751,10 @@ export default function UpgradeModal({
   const featureComparison = [
     { name: "Active Clients Limit", free: "Max 10 clients", pro: "Unlimited Clients" },
     { name: "Projects Limit", free: "Max 10 active", pro: "Unlimited Projects" },
+    { name: "Proposals Limit", free: "Max 5 proposals", pro: "Unlimited Proposals" },
+    { name: "Active Tasks Limit", free: "Max 5 tasks", pro: "Unlimited Tasks" },
+    { name: "Scheduled Follow-ups", free: "Max 5 follow-ups", pro: "Unlimited Follow-ups" },
+    { name: "Notes & Voice Records", free: "Locked (Preview only)", pro: "Unlimited Client Notes & Audio" },
     { name: "Invoices Access", free: "Basic (Draft only)", pro: "Unlimited Invoices & PDF export" },
     { name: "Secure Document Vault", free: "Locked", pro: "Contracts & Asset Back-Loader" },
     { name: "Revenue Reports & Analytics", free: "Basic totals", pro: "Advanced Reports & SVG Charts" },
@@ -786,10 +793,20 @@ export default function UpgradeModal({
             </div>
             <div>
               <span className="text-[10px] uppercase tracking-widest font-black text-indigo-200 bg-white/10 px-2.5 py-0.5 rounded-full">
-                Billing Manager
+                {triggerReason === "task_limit"
+                  ? "Task Limit Reached"
+                  : triggerReason === "followup_limit"
+                  ? "Follow-up Limit Reached"
+                  : triggerReason === "proposal_limit" || triggerReason === "proposals_limit"
+                  ? "Proposal Limit Reached"
+                  : "Billing Manager"}
               </span>
               <h2 className="text-xl font-black mt-1 leading-tight">
-                Freelancer CRM Pro
+                {triggerReason === "task_limit"
+                  ? "Task limit reached"
+                  : triggerReason === "proposal_limit" || triggerReason === "proposals_limit"
+                  ? "Proposal limit reached"
+                  : "Freelancer CRM Pro"}
               </h2>
             </div>
           </div>
@@ -798,9 +815,15 @@ export default function UpgradeModal({
             <div className="mt-4 p-2.5 rounded-lg bg-amber-500/15 border border-amber-500/20 text-yellow-100 text-xs flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-amber-300 shrink-0" />
               <span>
+                {triggerReason === "task_limit" && "You've reached the 5-task limit on the Free plan. Upgrade to Pro to create unlimited tasks and manage your work without limits."}
+                {(triggerReason === "proposal_limit" || triggerReason === "proposals_limit") && "You've reached the Free plan limit of 5 proposals. Upgrade to Pro to create more proposals."}
                 {triggerReason === "client_limit" && "You reached the limit of 10 Clients on the Free Plan. Upgrade your plan to add more clients."}
                 {triggerReason === "project_limit" && "You reached the limit of 10 Projects on the Free Plan."}
+                {triggerReason === "followup_limit" && "Follow-up limit reached: You've reached the 5 follow-up limit on the Free plan. Upgrade to Pro to schedule unlimited follow-ups and stay on top of your client relationships."}
                 {triggerReason === "document_storage" && "Document Storage (Contracts & Files) is a Pro feature."}
+                {triggerReason === "notes_records" && "Notes & Records is a Pro feature. Keep your client notes and important records organized in one place."}
+                {triggerReason === "notes_add" && "Notes & Records is a Pro feature. Upgrade to Pro to create client notes and organize records."}
+                {triggerReason === "voice_recording" && "Voice Recording is a Pro feature. Upgrade to Pro to record and organize client conversations and notes."}
                 {triggerReason === "advanced_charts" && "Advanced revenue breakout reports are a Pro feature."}
                 {triggerReason === "settings_upgrade" && "Upgrade now to remove all business limits."}
               </span>
@@ -1182,6 +1205,16 @@ export default function UpgradeModal({
                             </p>
                           </div>
                         )}
+
+                        <div className="pt-2 flex justify-end border-t border-slate-100 mt-2">
+                          <button
+                            type="button"
+                            onClick={onClose}
+                            className="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>

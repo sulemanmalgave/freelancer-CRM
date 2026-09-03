@@ -1,0 +1,224 @@
+{
+  "pending_activations": {},
+  "connected_devices": {
+    "dev_7e0104f1119fc25db13dee50": {
+      "id": "dev_7e0104f1119fc25db13dee50",
+      "freelancerId": "54395c83-8a90-4a6a-bd2f-ac95c8ea2052",
+      "deviceName": "Android Phone",
+      "platform": "Android",
+      "userAgent": "",
+      "pairedAt": "2026-09-03T04:54:01.155Z",
+      "lastActiveAt": "2026-09-03T04:55:38.281Z",
+      "status": "active",
+      "clientDeviceId": "stable_phone_fingerprint_abc"
+    }
+  },
+  "mobile_pairing_sessions": {
+    "5ed14bfc4518bd6864c19156d5f266c3eacd77af37acf2da": {
+      "pairingCode": "356533",
+      "pairingToken": "5ed14bfc4518bd6864c19156d5f266c3eacd77af37acf2da",
+      "freelancerId": "54395c83-8a90-4a6a-bd2f-ac95c8ea2052",
+      "createdAt": "2026-09-03T03:56:22.484Z",
+      "expiresAt": "2026-09-03T04:06:22.484Z",
+      "used": true
+    },
+    "code_356533": {
+      "pairingCode": "356533",
+      "pairingToken": "5ed14bfc4518bd6864c19156d5f266c3eacd77af37acf2da",
+      "freelancerId": "54395c83-8a90-4a6a-bd2f-ac95c8ea2052",
+      "createdAt": "2026-09-03T03:56:22.484Z",
+      "expiresAt": "2026-09-03T04:06:22.484Z",
+      "used": true
+    },
+    "d3b72721f792c6669e4dc2beb739db20dae5697104244dc3": {
+      "pairingCode": "135769",
+      "pairingToken": "d3b72721f792c6669e4dc2beb739db20dae5697104244dc3",
+      "freelancerId": "54395c83-8a90-4a6a-bd2f-ac95c8ea2052",
+      "createdAt": "2026-09-03T04:28:50.166Z",
+      "expiresAt": "2026-09-03T04:38:50.166Z",
+      "used": true
+    },
+    "code_135769": {
+      "pairingCode": "135769",
+      "pairingToken": "d3b72721f792c6669e4dc2beb739db20dae5697104244dc3",
+      "freelancerId": "54395c83-8a90-4a6a-bd2f-ac95c8ea2052",
+      "createdAt": "2026-09-03T04:28:50.166Z",
+      "expiresAt": "2026-09-03T04:38:50.166Z",
+      "used": true
+    },
+    "3e1a7c5ed79ba84eb75d864e49e8ba33e560b0fd34f042ef": {
+      "pairingCode": "580463",
+      "pairingToken": "3e1a7c5ed79ba84eb75d864e49e8ba33e560b0fd34f042ef",
+      "freelancerId": "54395c83-8a90-4a6a-bd2f-ac95c8ea2052",
+      "createdAt": "2026-09-03T04:35:07.204Z",
+      "expiresAt": "2026-09-03T04:45:07.204Z",
+      "used": true
+    },
+    "code_580463": {
+      "pairingCode": "580463",
+      "pairingToken": "3e1a7c5ed79ba84eb75d864e49e8ba33e560b0fd34f042ef",
+      "freelancerId": "54395c83-8a90-4a6a-bd2f-ac95c8ea2052",
+      "createdAt": "2026-09-03T04:35:07.204Z",
+      "expiresAt": "2026-09-03T04:45:07.204Z",
+      "used": true
+    },
+    "80615f3ead22ba4780b29f204cccfb2052be5c8cfc827fdc": {
+      "pairingCode": "189340",
+      "pairingToken": "80615f3ead22ba4780b29f204cccfb2052be5c8cfc827fdc",
+      "freelancerId": "54395c83-8a90-4a6a-bd2f-ac95c8ea2052",
+      "createdAt": "2026-09-03T04:39:26.846Z",
+      "expiresAt": "2026-09-03T04:49:26.846Z",
+      "used": false
+    },
+    "code_189340": {
+      "pairingCode": "189340",
+      "pairingToken": "80615f3ead22ba4780b29f204cccfb2052be5c8cfc827fdc",
+      "freelancerId": "54395c83-8a90-4a6a-bd2f-ac95c8ea2052",
+      "createdAt": "2026-09-03T04:39:26.846Z",
+      "expiresAt": "2026-09-03T04:49:26.846Z",
+      "used": false
+    },
+    "33db6f1ea7fd5baeddc98a2a6d2816029906952b1f1e92ef": {
+      "pairingCode": "780566",
+      "pairingToken": "33db6f1ea7fd5baeddc98a2a6d2816029906952b1f1e92ef",
+      "freelancerId": "54395c83-8a90-4a6a-bd2f-ac95c8ea2052",
+      "createdAt": "2026-09-03T04:39:34.221Z",
+      "expiresAt": "2026-09-03T04:49:34.221Z",
+      "used": true
+    },
+    "code_780566": {
+      "pairingCode": "780566",
+      "pairingToken": "33db6f1ea7fd5baeddc98a2a6d2816029906952b1f1e92ef",
+      "freelancerId": "54395c83-8a90-4a6a-bd2f-ac95c8ea2052",
+      "createdAt": "2026-09-03T04:39:34.221Z",
+      "expiresAt": "2026-09-03T04:49:34.221Z",
+      "used": true
+    },
+    "36b9de5c8a4bf115a7c931fdd759bc66f9c7e06d14de6c21": {
+      "pairingCode": "295111",
+      "pairingToken": "36b9de5c8a4bf115a7c931fdd759bc66f9c7e06d14de6c21",
+      "freelancerId": "54395c83-8a90-4a6a-bd2f-ac95c8ea2052",
+      "createdAt": "2026-09-03T04:41:44.564Z",
+      "expiresAt": "2026-09-03T04:51:44.564Z",
+      "used": true
+    },
+    "code_295111": {
+      "pairingCode": "295111",
+      "pairingToken": "36b9de5c8a4bf115a7c931fdd759bc66f9c7e06d14de6c21",
+      "freelancerId": "54395c83-8a90-4a6a-bd2f-ac95c8ea2052",
+      "createdAt": "2026-09-03T04:41:44.564Z",
+      "expiresAt": "2026-09-03T04:51:44.564Z",
+      "used": true
+    },
+    "ebf9d9038935282dc07b300275912087da90e013d69b777d": {
+      "pairingCode": "715501",
+      "pairingToken": "ebf9d9038935282dc07b300275912087da90e013d69b777d",
+      "freelancerId": "54395c83-8a90-4a6a-bd2f-ac95c8ea2052",
+      "createdAt": "2026-09-03T04:54:01.130Z",
+      "expiresAt": "2026-09-03T05:04:01.130Z",
+      "used": true
+    },
+    "code_715501": {
+      "pairingCode": "715501",
+      "pairingToken": "ebf9d9038935282dc07b300275912087da90e013d69b777d",
+      "freelancerId": "54395c83-8a90-4a6a-bd2f-ac95c8ea2052",
+      "createdAt": "2026-09-03T04:54:01.130Z",
+      "expiresAt": "2026-09-03T05:04:01.130Z",
+      "used": true
+    },
+    "122316eac3840cc5f7e3d48ed72bae197d805a1bcbd9f298": {
+      "pairingCode": "837480",
+      "pairingToken": "122316eac3840cc5f7e3d48ed72bae197d805a1bcbd9f298",
+      "freelancerId": "54395c83-8a90-4a6a-bd2f-ac95c8ea2052",
+      "createdAt": "2026-09-03T04:54:01.147Z",
+      "expiresAt": "2026-09-03T05:04:01.147Z",
+      "used": true
+    },
+    "code_837480": {
+      "pairingCode": "837480",
+      "pairingToken": "122316eac3840cc5f7e3d48ed72bae197d805a1bcbd9f298",
+      "freelancerId": "54395c83-8a90-4a6a-bd2f-ac95c8ea2052",
+      "createdAt": "2026-09-03T04:54:01.147Z",
+      "expiresAt": "2026-09-03T05:04:01.147Z",
+      "used": true
+    },
+    "c8af901e5d584d757a280c6176f8afbc39c3274eca911331": {
+      "pairingCode": "929784",
+      "pairingToken": "c8af901e5d584d757a280c6176f8afbc39c3274eca911331",
+      "freelancerId": "54395c83-8a90-4a6a-bd2f-ac95c8ea2052",
+      "profile": {
+        "id": "54395c83-8a90-4a6a-bd2f-ac95c8ea2052",
+        "name": "Freelancer Test",
+        "businessName": "Test Studio",
+        "email": "test@example.com",
+        "onboardingCompleted": true
+      },
+      "createdAt": "2026-09-03T04:55:38.241Z",
+      "expiresAt": "2026-09-03T05:05:38.241Z",
+      "used": true
+    },
+    "code_929784": {
+      "pairingCode": "929784",
+      "pairingToken": "c8af901e5d584d757a280c6176f8afbc39c3274eca911331",
+      "freelancerId": "54395c83-8a90-4a6a-bd2f-ac95c8ea2052",
+      "profile": {
+        "id": "54395c83-8a90-4a6a-bd2f-ac95c8ea2052",
+        "name": "Freelancer Test",
+        "businessName": "Test Studio",
+        "email": "test@example.com",
+        "onboardingCompleted": true
+      },
+      "createdAt": "2026-09-03T04:55:38.241Z",
+      "expiresAt": "2026-09-03T05:05:38.241Z",
+      "used": true
+    },
+    "879cc2ac6cd4bcd91de0e44c6fc6fbe3639db980ef4c3c3b": {
+      "pairingCode": "461629",
+      "pairingToken": "879cc2ac6cd4bcd91de0e44c6fc6fbe3639db980ef4c3c3b",
+      "freelancerId": "54395c83-8a90-4a6a-bd2f-ac95c8ea2052",
+      "profile": {
+        "id": "54395c83-8a90-4a6a-bd2f-ac95c8ea2052",
+        "name": "Freelancer Test",
+        "businessName": "Test Studio",
+        "email": "test@example.com",
+        "onboardingCompleted": true
+      },
+      "createdAt": "2026-09-03T04:55:38.270Z",
+      "expiresAt": "2026-09-03T05:05:38.270Z",
+      "used": false
+    },
+    "code_461629": {
+      "pairingCode": "461629",
+      "pairingToken": "879cc2ac6cd4bcd91de0e44c6fc6fbe3639db980ef4c3c3b",
+      "freelancerId": "54395c83-8a90-4a6a-bd2f-ac95c8ea2052",
+      "profile": {
+        "id": "54395c83-8a90-4a6a-bd2f-ac95c8ea2052",
+        "name": "Freelancer Test",
+        "businessName": "Test Studio",
+        "email": "test@example.com",
+        "onboardingCompleted": true
+      },
+      "createdAt": "2026-09-03T04:55:38.270Z",
+      "expiresAt": "2026-09-03T05:05:38.270Z",
+      "used": false
+    }
+  },
+  "freelancers": {
+    "54395c83-8a90-4a6a-bd2f-ac95c8ea2052": {
+      "id": "54395c83-8a90-4a6a-bd2f-ac95c8ea2052",
+      "name": "Freelancer Test",
+      "businessName": "Test Studio",
+      "email": "test@example.com",
+      "onboardingCompleted": true
+    }
+  },
+  "config": {
+    "paypal_live_v4": {
+      "paypalPlanMonthly": "P-57E77177FW5061919NKMPJ4Y",
+      "paypalPlanQuarterly": "P-87K99586V2123033WNKMPJ5A",
+      "productId": "PROD-9EM75136C2855662T",
+      "environment": "live",
+      "createdAt": "2026-09-03T04:17:57.015Z"
+    }
+  }
+}

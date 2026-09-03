@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo, memo } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Plus, Check, X, Edit3, Trash2, Calendar, Coins, FolderKanban, FolderGit2, ArrowRight, LayoutGrid, CalendarDays, AlertCircle } from "lucide-react";
 import { Project, Client, FreelancerProfile } from "../types";
@@ -15,7 +15,7 @@ interface ProjectsViewProps {
   onTriggerUpgrade: (reason: string) => void;
 }
 
-export default function ProjectsView({
+function ProjectsView({
   projects,
   clients,
   profile,
@@ -45,54 +45,62 @@ export default function ProjectsView({
 
   const [filterStatus, setFilterStatus] = useState<"All" | Project["status"]>("All");
 
-  const filteredProjects = projects.filter((p) => {
-    const client = clients.find((c) => c.id === p.clientId);
-    const clientName = client ? `${client.companyName} ${client.contactPerson}`.toLowerCase() : "";
-    const matchesSearch =
-      p.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      clientName.includes(searchTerm.toLowerCase());
-    const matchesFilter = filterStatus === "All" || p.status === filterStatus;
-    return matchesSearch && matchesFilter;
-  });
+  const filteredProjects = useMemo(() => {
+    const term = searchTerm.toLowerCase();
+    return projects.filter((p) => {
+      const client = clients.find((c) => c.id === p.clientId);
+      const clientName = client ? `${client.companyName} ${client.contactPerson}`.toLowerCase() : "";
+      const matchesSearch =
+        p.title.toLowerCase().includes(term) ||
+        clientName.includes(term);
+      const matchesFilter = filterStatus === "All" || p.status === filterStatus;
+      return matchesSearch && matchesFilter;
+    });
+  }, [projects, clients, searchTerm, filterStatus]);
 
   // Timeline bounds and visual timeline month scale
-  const earliestDate = filteredProjects.reduce((acc, p) => {
-    const d = p.startDate || p.createdAt?.split("T")[0];
-    if (!d) return acc;
-    return d < acc ? d : acc;
-  }, new Date().toISOString().split("T")[0]);
+  const { earliestDate, latestDate, timelineStart, totalDuration, months } = useMemo(() => {
+    const today = new Date().toISOString().split("T")[0];
+    const eDate = filteredProjects.reduce((acc, p) => {
+      const d = p.startDate || p.createdAt?.split("T")[0];
+      if (!d) return acc;
+      return d < acc ? d : acc;
+    }, today);
 
-  const latestDate = filteredProjects.reduce((acc, p) => {
-    const d = p.endDate || p.deadline;
-    if (!d) return acc;
-    return d > acc ? d : acc;
-  }, new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]);
+    const lDate = filteredProjects.reduce((acc, p) => {
+      const d = p.endDate || p.deadline;
+      if (!d) return acc;
+      return d > acc ? d : acc;
+    }, new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]);
 
-  const startParsed = new Date(earliestDate);
-  const timelineStart = new Date(startParsed.getFullYear(), startParsed.getMonth(), 1);
+    const startParsed = new Date(eDate);
+    const timelineStart = new Date(startParsed.getFullYear(), startParsed.getMonth(), 1);
 
-  const endParsed = new Date(latestDate);
-  const timelineEnd = new Date(endParsed.getFullYear(), endParsed.getMonth() + 1, 0);
+    const endParsed = new Date(lDate);
+    const timelineEnd = new Date(endParsed.getFullYear(), endParsed.getMonth() + 1, 0);
 
-  const totalDuration = timelineEnd.getTime() - timelineStart.getTime() || 1;
+    const totalDuration = timelineEnd.getTime() - timelineStart.getTime() || 1;
 
-  const months: { name: string; offset: number; width: number }[] = [];
-  let currentMonthIterator = new Date(timelineStart);
-  while (currentMonthIterator < timelineEnd) {
-    const mStart = new Date(currentMonthIterator.getFullYear(), currentMonthIterator.getMonth(), 1);
-    const mEnd = new Date(currentMonthIterator.getFullYear(), currentMonthIterator.getMonth() + 1, 1);
+    const monthList: { name: string; offset: number; width: number }[] = [];
+    let currentMonthIterator = new Date(timelineStart);
+    while (currentMonthIterator < timelineEnd) {
+      const mStart = new Date(currentMonthIterator.getFullYear(), currentMonthIterator.getMonth(), 1);
+      const mEnd = new Date(currentMonthIterator.getFullYear(), currentMonthIterator.getMonth() + 1, 1);
 
-    const offsetRange = ((mStart.getTime() - timelineStart.getTime()) / totalDuration) * 100;
-    const widthRange = ((Math.min(mEnd.getTime(), timelineEnd.getTime()) - mStart.getTime()) / totalDuration) * 100;
+      const offsetRange = ((mStart.getTime() - timelineStart.getTime()) / totalDuration) * 100;
+      const widthRange = ((Math.min(mEnd.getTime(), timelineEnd.getTime()) - mStart.getTime()) / totalDuration) * 100;
 
-    months.push({
-      name: mStart.toLocaleDateString(undefined, { month: "short", year: "2-digit" }),
-      offset: offsetRange,
-      width: widthRange,
-    });
+      monthList.push({
+        name: mStart.toLocaleDateString(undefined, { month: "short", year: "2-digit" }),
+        offset: offsetRange,
+        width: widthRange,
+      });
 
-    currentMonthIterator.setMonth(currentMonthIterator.getMonth() + 1);
-  }
+      currentMonthIterator.setMonth(currentMonthIterator.getMonth() + 1);
+    }
+
+    return { earliestDate: eDate, latestDate: lDate, timelineStart, totalDuration, months: monthList };
+  }, [filteredProjects]);
 
   const resetForm = () => {
     setTitle("");
@@ -244,11 +252,17 @@ export default function ProjectsView({
       {/* Adding/Editing Popup Interface */}
       <AnimatePresence>
         {(isAdding || editingProject) && (
-          <div className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+          >
             <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
+              initial={{ scale: 0.95, opacity: 0, y: 12 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 12 }}
+              transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
               className="w-full max-w-md glass-modal rounded-2xl shadow-xl overflow-hidden"
             >
               <div className="p-5 border-b border-white/10 flex items-center justify-between">
@@ -260,7 +274,7 @@ export default function ProjectsView({
                     setIsAdding(false);
                     setEditingProject(null);
                   }}
-                  className="p-1 rounded-full hover:bg-slate-200 text-slate-400 hover:text-slate-600"
+                  className="p-1 rounded-full hover:bg-slate-200 text-slate-400 hover:text-slate-600 cursor-pointer"
                 >
                   <X size={16} />
                 </button>
@@ -446,7 +460,7 @@ export default function ProjectsView({
                 </div>
               </form>
             </motion.div>
-          </div>
+          </motion.div>
         )}
       </AnimatePresence>
 
@@ -605,124 +619,137 @@ export default function ProjectsView({
         </div>
       ) : (
         /* Projects Visual Grid */
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredProjects.map((p) => {
-            const isOverdue = p.deadline && new Date(p.deadline) < new Date() && p.status !== "Completed";
-            const pStart = p.startDate ? new Date(p.startDate) : new Date(p.createdAt || Date.now());
-            const pEnd = p.endDate ? new Date(p.endDate) : (p.deadline ? new Date(p.deadline) : null);
-            return (
-              <motion.div
-                layout
-                key={p.id}
-                className="p-5 glass-panel glass-highlight rounded-2xl transition-all flex flex-col justify-between group"
-              >
-                <div>
-                  <div className="flex items-start justify-between gap-2 mb-3">
-                    <div>
-                      <h4 className="font-bold text-slate-800 text-sm line-clamp-1">
-                        {p.title}
-                      </h4>
-                      <span className="text-[11px] font-medium text-indigo-650 mt-0.5 block line-clamp-1">
-                        {getClientMeta(p.clientId)}
+        <motion.div layout className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <AnimatePresence mode="popLayout">
+            {filteredProjects.map((p) => {
+              const isOverdue = p.deadline && new Date(p.deadline) < new Date() && p.status !== "Completed";
+              const pStart = p.startDate ? new Date(p.startDate) : new Date(p.createdAt || Date.now());
+              const pEnd = p.endDate ? new Date(p.endDate) : (p.deadline ? new Date(p.deadline) : null);
+              return (
+                <motion.div
+                  layout
+                  initial={{ opacity: 0, scale: 0.96, y: 12 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.94, y: -8 }}
+                  transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                  whileHover={{ y: -3, transition: { duration: 0.15 } }}
+                  key={p.id}
+                  className="p-5 glass-panel glass-highlight rounded-2xl transition-all flex flex-col justify-between group"
+                >
+                  <div>
+                    <div className="flex items-start justify-between gap-2 mb-3">
+                      <div>
+                        <h4 className="font-bold text-slate-800 text-sm line-clamp-1">
+                          {p.title}
+                        </h4>
+                        <span className="text-[11px] font-medium text-indigo-650 mt-0.5 block line-clamp-1">
+                          {getClientMeta(p.clientId)}
+                        </span>
+                      </div>
+                      <span className={`text-[9px] uppercase font-bold px-2 py-0.5 rounded-full ${
+                        p.status === "Completed"
+                          ? "bg-emerald-500/10 text-emerald-650"
+                          : p.status === "In Progress"
+                          ? "bg-sky-500/10 text-sky-655"
+                          : p.status === "On Hold"
+                          ? "bg-amber-500/10 text-amber-655"
+                          : "bg-slate-500/10 text-slate-400"
+                      }`}>
+                        {p.status}
                       </span>
                     </div>
-                    <span className={`text-[9px] uppercase font-bold px-2 py-0.5 rounded-full ${
-                      p.status === "Completed"
-                        ? "bg-emerald-500/10 text-emerald-650"
-                        : p.status === "In Progress"
-                        ? "bg-sky-500/10 text-sky-655"
-                        : p.status === "On Hold"
-                        ? "bg-amber-500/10 text-amber-655"
-                        : "bg-slate-500/10 text-slate-400"
-                    }`}>
-                      {p.status}
-                    </span>
-                  </div>
 
-                  <div className="space-y-3 border-t border-black/5 pt-3 mb-4 text-xs">
-                    {/* Visual Progress Slider gauge inside the card */}
-                    <div className="space-y-1">
-                      <div className="flex justify-between items-center text-[10px]">
-                        <span className="text-slate-450 font-medium">Agreement Progress</span>
-                        <strong className="text-indigo-600 font-mono font-bold">
-                          {p.progress || 0}%
+                    <div className="space-y-3 border-t border-black/5 pt-3 mb-4 text-xs">
+                      {/* Visual Progress Slider gauge inside the card */}
+                      <div className="space-y-1">
+                        <div className="flex justify-between items-center text-[10px]">
+                          <span className="text-slate-450 font-medium">Agreement Progress</span>
+                          <strong className="text-indigo-600 font-mono font-bold">
+                            {p.progress || 0}%
+                          </strong>
+                        </div>
+                        <div className="w-full bg-black/10 h-1.5 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full pointer-events-none rounded-full transition-all duration-500 ${
+                              p.status === "Completed"
+                                ? "bg-emerald-500"
+                                : p.status === "On Hold"
+                                ? "bg-amber-500"
+                                : "bg-indigo-600"
+                            }`}
+                            style={{ width: `${p.progress || 0}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between text-slate-400">
+                        <span>Total Value:</span>
+                        <strong className="text-slate-800 font-mono font-bold">
+                          {formatCurrency(p.budget, profile.currency)}
                         </strong>
                       </div>
-                      <div className="w-full bg-black/10 h-1.5 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full pointer-events-none rounded-full transition-all duration-500 ${
-                            p.status === "Completed"
-                              ? "bg-emerald-500"
-                              : p.status === "On Hold"
-                              ? "bg-amber-500"
-                              : "bg-indigo-600"
-                          }`}
-                          style={{ width: `${p.progress || 0}%` }}
-                        />
+
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">Project Duration:</span>
+                        <strong className="text-[10px] sm:text-[11px] font-bold text-slate-700 flex items-center gap-0.5">
+                          <Calendar size={11} className="text-indigo-505 shrink-0 mr-0.5" />
+                          <span>{pStart.toLocaleDateString(undefined, {month: 'short', day: 'numeric'})}</span>
+                          <span className="text-slate-400 font-normal mx-1">to</span>
+                          <span className={isOverdue ? "text-red-500 animate-pulse font-black" : ""}>
+                            {pEnd ? pEnd.toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: '2-digit'}) : 'Not set'}
+                          </span>
+                        </strong>
                       </div>
-                    </div>
 
-                    <div className="flex items-center justify-between text-slate-400">
-                      <span>Total Value:</span>
-                      <strong className="text-slate-800 font-mono font-bold">
-                        {formatCurrency(p.budget, profile.currency)}
-                      </strong>
+                      {p.notes && (
+                        <p className="text-[11px] text-slate-450 bg-slate-500/5 p-2 rounded-lg italic line-clamp-2 mt-2">
+                          "{p.notes}"
+                        </p>
+                      )}
                     </div>
-
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-400">Project Duration:</span>
-                      <strong className="text-[10px] sm:text-[11px] font-bold text-slate-700 flex items-center gap-0.5">
-                        <Calendar size={11} className="text-indigo-505 shrink-0 mr-0.5" />
-                        <span>{pStart.toLocaleDateString(undefined, {month: 'short', day: 'numeric'})}</span>
-                        <span className="text-slate-400 font-normal mx-1">to</span>
-                        <span className={isOverdue ? "text-red-500 animate-pulse font-black" : ""}>
-                          {pEnd ? pEnd.toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: '2-digit'}) : 'Not set'}
-                        </span>
-                      </strong>
-                    </div>
-
-                    {p.notes && (
-                      <p className="text-[11px] text-slate-450 bg-slate-500/5 p-2 rounded-lg italic line-clamp-2 mt-2">
-                        "{p.notes}"
-                      </p>
-                    )}
                   </div>
-                </div>
 
-                <div className="flex justify-end gap-1.5 border-t border-black/5 pt-3 opacity-90 group-hover:opacity-100 transition-opacity">
-                  <button
-                    onClick={() => handleStartEdit(p)}
-                    className="p-1 px-2 border border-slate-205 text-slate-500 hover:text-slate-700 hover:bg-slate-50 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer"
-                  >
-                    <Edit3 size={11} />
-                    <span>Edit</span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      if (confirm(`Delete project contract: "${p.title}"? This cannot be undone.`)) {
-                        onDeleteProject(p.id);
-                      }
-                    }}
-                    className="p-1 px-2 border border-red-200 text-red-550 hover:text-white hover:bg-red-500 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer"
-                  >
-                    <Trash2 size={11} />
-                    <span>Delete</span>
-                  </button>
-                </div>
-              </motion.div>
-            );
-          })}
-        </div>
+                  <div className="flex justify-end gap-1.5 border-t border-black/5 pt-3 opacity-90 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => handleStartEdit(p)}
+                      className="p-1 px-2 border border-slate-205 text-slate-500 hover:text-slate-700 hover:bg-slate-50 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer"
+                    >
+                      <Edit3 size={11} />
+                      <span>Edit</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (confirm(`Delete project contract: "${p.title}"? This cannot be undone.`)) {
+                          onDeleteProject(p.id);
+                        }
+                      }}
+                      className="p-1 px-2 border border-red-200 text-red-550 hover:text-white hover:bg-red-500 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer"
+                    >
+                      <Trash2 size={11} />
+                      <span>Delete</span>
+                    </button>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
+        </motion.div>
       )}
 
       {/* Client Warning Modal Overlay */}
       <AnimatePresence>
         {showClientWarning && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          >
             <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
+              initial={{ scale: 0.95, opacity: 0, y: 12 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 12 }}
+              transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
               className="w-full max-w-sm bg-white rounded-2xl shadow-xl overflow-hidden p-6 border border-slate-100"
             >
               <div className="flex flex-col items-center text-center">
@@ -745,9 +772,11 @@ export default function ProjectsView({
                 </div>
               </div>
             </motion.div>
-          </div>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>
   );
 }
+
+export default memo(ProjectsView);

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useMemo, memo } from "react";
 import { motion } from "motion/react";
 import { TrendingUp, FileText, Calendar, Wallet, CheckCircle2, AlertCircle, Award, Sparkles } from "lucide-react";
 import { Invoice, FreelancerProfile } from "../types";
@@ -10,22 +10,28 @@ interface RevenueViewProps {
   onTriggerUpgrade: (reason: string) => void;
 }
 
-export default function RevenueView({ invoices, profile, onTriggerUpgrade }: RevenueViewProps) {
+const calculateInvoiceTotal = (inv: Invoice) => {
+  const base = inv.services.reduce((sum, item) => sum + item.quantity * item.rate, 0);
+  return base + base * ((inv.taxRate || 0) / 100);
+};
+
+function RevenueView({ invoices, profile, onTriggerUpgrade }: RevenueViewProps) {
   const isFree = profile.plan === "Free" && !profile.premium;
-  // Extract Paid vs Pending
-  const paidInvoicesList = invoices.filter((i) => i.status === "Paid");
-  const pendingInvoicesList = invoices.filter((i) => i.status === "Sent" || i.status === "Draft" || i.status === "Overdue");
 
-  const calculateInvoiceTotal = (inv: Invoice) => {
-    const base = inv.services.reduce((sum, item) => sum + item.quantity * item.rate, 0);
-    return base + base * (inv.taxRate / 100);
-  };
+  const {
+    paidInvoicesList,
+    pendingInvoicesList,
+    totalPaidRevenue,
+    totalPendingRevenue,
+    monthlyBreakout,
+    maxMonthlyVal,
+  } = useMemo(() => {
+    const paidList = invoices.filter((i) => i.status === "Paid");
+    const pendingList = invoices.filter((i) => i.status === "Sent" || i.status === "Draft" || i.status === "Overdue");
 
-  const totalPaidRevenue = paidInvoicesList.reduce((acc, i) => acc + calculateInvoiceTotal(i), 0);
-  const totalPendingRevenue = pendingInvoicesList.reduce((acc, i) => acc + calculateInvoiceTotal(i), 0);
+    const totalPaid = paidList.reduce((acc, i) => acc + calculateInvoiceTotal(i), 0);
+    const totalPending = pendingList.reduce((acc, i) => acc + calculateInvoiceTotal(i), 0);
 
-  // Generate Past 6 Months billing data for bar graphs
-  const getPastSixMonths = () => {
     const list = [];
     const date = new Date();
     for (let i = 5; i >= 0; i--) {
@@ -38,34 +44,39 @@ export default function RevenueView({ invoices, profile, onTriggerUpgrade }: Rev
         pendingAmount: 0,
       });
     }
-    return list;
-  };
 
-  const monthlyBreakout = getPastSixMonths();
+    invoices.forEach((inv) => {
+      try {
+        const d = new Date(inv.issueDate);
+        const mIdx = d.getMonth();
+        const yVal = d.getFullYear();
 
-  invoices.forEach((inv) => {
-    try {
-      const date = new Date(inv.issueDate);
-      const mIdx = date.getMonth();
-      const yVal = date.getFullYear();
-
-      const match = monthlyBreakout.find((mb) => mb.monthIndex === mIdx && mb.year === yVal);
-      if (match) {
-        const amt = calculateInvoiceTotal(inv);
-        if (inv.status === "Paid") {
-          match.paidAmount += amt;
-        } else {
-          match.pendingAmount += amt;
+        const match = list.find((mb) => mb.monthIndex === mIdx && mb.year === yVal);
+        if (match) {
+          const amt = calculateInvoiceTotal(inv);
+          if (inv.status === "Paid") {
+            match.paidAmount += amt;
+          } else {
+            match.pendingAmount += amt;
+          }
         }
-      }
-    } catch {}
-  });
+      } catch {}
+    });
 
-  // Calculate maximum monthly value to auto-scale SVG bars
-  const maxMonthlyVal = Math.max(
-    ...monthlyBreakout.map((mb) => mb.paidAmount + mb.pendingAmount),
-    1000 // default min height scale
-  );
+    const maxVal = Math.max(
+      ...list.map((mb) => mb.paidAmount + mb.pendingAmount),
+      1000
+    );
+
+    return {
+      paidInvoicesList: paidList,
+      pendingInvoicesList: pendingList,
+      totalPaidRevenue: totalPaid,
+      totalPendingRevenue: totalPending,
+      monthlyBreakout: list,
+      maxMonthlyVal: maxVal,
+    };
+  }, [invoices]);
 
   return (
     <div className="space-y-6">
@@ -92,7 +103,13 @@ export default function RevenueView({ invoices, profile, onTriggerUpgrade }: Rev
 
       {/* KPI Stats Block */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="p-5 rounded-2xl glass-panel glass-highlight flex items-center justify-between">
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.25, delay: 0.05 }}
+          whileHover={{ y: -2, transition: { duration: 0.15 } }}
+          className="p-5 rounded-2xl glass-panel glass-highlight flex items-center justify-between"
+        >
           <div className="space-y-1">
             <span className="text-xs font-bold text-slate-450 uppercase tracking-wider block">Total Received Income</span>
             <strong className="text-2xl font-black text-emerald-600 font-mono tracking-tight block">
@@ -103,9 +120,15 @@ export default function RevenueView({ invoices, profile, onTriggerUpgrade }: Rev
           <div className="p-3 bg-emerald-500/10 rounded-xl text-emerald-600">
             <CheckCircle2 className="w-6 h-6" />
           </div>
-        </div>
+        </motion.div>
 
-        <div className="p-5 rounded-2xl glass-panel glass-highlight flex items-center justify-between">
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.25, delay: 0.1 }}
+          whileHover={{ y: -2, transition: { duration: 0.15 } }}
+          className="p-5 rounded-2xl glass-panel glass-highlight flex items-center justify-between"
+        >
           <div className="space-y-1">
             <span className="text-xs font-bold text-slate-450 uppercase tracking-wider block">Pending / Unpaid Bills</span>
             <strong className="text-2xl font-black text-amber-600 font-mono tracking-tight block">
@@ -116,9 +139,15 @@ export default function RevenueView({ invoices, profile, onTriggerUpgrade }: Rev
           <div className="p-3 bg-amber-500/10 rounded-xl text-amber-600">
             <AlertCircle className="w-6 h-6" />
           </div>
-        </div>
+        </motion.div>
 
-        <div className="p-5 rounded-2xl glass-panel glass-highlight flex items-center justify-between">
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.25, delay: 0.15 }}
+          whileHover={{ y: -2, transition: { duration: 0.15 } }}
+          className="p-5 rounded-2xl glass-panel glass-highlight flex items-center justify-between"
+        >
           <div className="space-y-1">
             <span className="text-xs font-bold text-slate-450 uppercase tracking-wider block">Gross Valuation</span>
             <strong className="text-2xl font-black text-purple-600 font-mono tracking-tight block">
@@ -129,7 +158,7 @@ export default function RevenueView({ invoices, profile, onTriggerUpgrade }: Rev
           <div className="p-3 bg-purple-500/10 rounded-xl text-purple-600">
             <TrendingUp className="w-6 h-6" />
           </div>
-        </div>
+        </motion.div>
       </div>
 
       {/* SVG Interactive Dashboard Chart (Gated visual states) */}
@@ -274,3 +303,5 @@ export default function RevenueView({ invoices, profile, onTriggerUpgrade }: Rev
     </div>
   );
 }
+
+export default memo(RevenueView);

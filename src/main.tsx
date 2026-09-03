@@ -1,4 +1,4 @@
-// Intercept and gracefully ignore PayPal SDK's sandbox-induced unhandled exceptions
+// Intercept and gracefully ignore third-party SDK sandbox-induced unhandled exceptions
 if (typeof window !== "undefined") {
   // 1. legacy window.onerror (highly effective for suppressing console bubble exceptions)
   const prevOnError = window.onerror;
@@ -11,10 +11,13 @@ if (typeof window !== "undefined") {
       msg.toLowerCase().includes("paypal_js_sdk") ||
       src.toLowerCase().includes("paypal") ||
       msg.toLowerCase().includes("script error") ||
+      msg.toLowerCase().includes("illegal constructor") ||
       errStr.toLowerCase().includes("paypal") ||
-      errStr.toLowerCase().includes("paypal_js_sdk")
+      errStr.toLowerCase().includes("paypal_js_sdk") ||
+      errStr.toLowerCase().includes("illegal constructor") ||
+      src.toLowerCase().includes("accounts.google.com")
     ) {
-      console.warn("[PayPal SDK Handled Error via window.onerror]:", msg, "at", src);
+      console.warn("[Handled Third-Party / SDK Error via window.onerror]:", msg, "at", src);
       return true; // return true to completely suppress the error
     }
     if (prevOnError) {
@@ -34,10 +37,13 @@ if (typeof window !== "undefined") {
       msg.toLowerCase().includes("paypal_js_sdk") ||
       url.toLowerCase().includes("paypal") ||
       msg.toLowerCase().includes("script error") ||
+      msg.toLowerCase().includes("illegal constructor") ||
       errStr.toLowerCase().includes("paypal") ||
-      errStr.toLowerCase().includes("paypal_js_sdk")
+      errStr.toLowerCase().includes("paypal_js_sdk") ||
+      errStr.toLowerCase().includes("illegal constructor") ||
+      url.toLowerCase().includes("accounts.google.com")
     ) {
-      console.warn("[PayPal SDK Handled Error via addEventListener]:", msg, "at", url);
+      console.warn("[Handled Third-Party / SDK Error via addEventListener]:", msg, "at", url);
       event.preventDefault();
       event.stopPropagation();
     }
@@ -50,9 +56,10 @@ if (typeof window !== "undefined") {
     if (
       reasonStr.toLowerCase().includes("paypal") ||
       reasonStr.toLowerCase().includes("paypal_js_sdk") ||
-      reasonStr.toLowerCase().includes("script error")
+      reasonStr.toLowerCase().includes("script error") ||
+      reasonStr.toLowerCase().includes("illegal constructor")
     ) {
-      console.warn("[PayPal SDK Handled Promise Rejection via addEventListener]:", reasonStr);
+      console.warn("[Handled Third-Party / SDK Promise Rejection via addEventListener]:", reasonStr);
       event.preventDefault();
       event.stopPropagation();
     }

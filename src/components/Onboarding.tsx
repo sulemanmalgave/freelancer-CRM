@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from "react";
 import { motion } from "motion/react";
-import { Briefcase, Landmark, Check, Coins, ArrowRight, UserCheck } from "lucide-react";
+import { Briefcase, Landmark, Check, Coins, ArrowRight, UserCheck, Smartphone } from "lucide-react";
 import { FreelancerProfile } from "../types";
 import { detectLocale, generateUUID } from "../utils";
 
 interface OnboardingProps {
   onComplete: (profile: FreelancerProfile) => void;
+  onConnectExisting?: () => void;
 }
 
-export default function Onboarding({ onComplete }: OnboardingProps) {
+export default function Onboarding({ onComplete, onConnectExisting }: OnboardingProps) {
   const { country, currency } = detectLocale();
 
   const [name, setName] = useState("");
@@ -175,11 +176,34 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
 
           <button
             type="submit"
+            id="onboarding-launch-workspace-btn"
             className="w-full mt-6 py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/15 group cursor-pointer"
           >
             <span>Launch CRM Workspace</span>
             <ArrowRight size={16} className="group-hover:translate-x-0.5 transition-transform" />
           </button>
+
+          {/* Existing Account Connection Option */}
+          <div className="mt-5 pt-4 border-t border-slate-200/70 text-center">
+            <p className="text-xs text-slate-500 font-medium mb-2.5">
+              Already have an account?
+            </p>
+            <button
+              type="button"
+              id="onboarding-connect-existing-btn"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (onConnectExisting) {
+                  onConnectExisting();
+                }
+              }}
+              className="w-full py-2.5 px-4 bg-white hover:bg-slate-50 active:scale-[0.99] border border-slate-300 hover:border-indigo-400 text-slate-800 hover:text-indigo-600 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-2xs hover:shadow-xs"
+            >
+              <Smartphone size={15} className="text-indigo-600" />
+              <span>Connect Existing Account</span>
+            </button>
+          </div>
         </form>
       </motion.div>
     </div>

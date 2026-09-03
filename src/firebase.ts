@@ -1,6 +1,13 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { initializeFirestore } from "firebase/firestore";
+import { initializeFirestore, setLogLevel } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
+
+// Silence noisy backend unreachable connection warnings during offline/transient mode
+try {
+  setLogLevel("error");
+} catch {
+  // Ignore in environments where setLogLevel is restricted
+}
 
 const firebaseConfig = {
   projectId: "gen-lang-client-0198820455",
@@ -16,11 +23,12 @@ const databaseId = "ai-studio-d5cae848-c1ed-4f2e-9f89-e9c69ed15c6c";
 // Initialize Firebase
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
-// Initialize Firestore targeting the custom databaseId with experimentalForceLongPolling enabled
+// Initialize Firestore targeting the custom databaseId with auto-detect long polling
 export const db = initializeFirestore(app, {
-  experimentalForceLongPolling: true,
+  experimentalAutoDetectLongPolling: true,
   useFetchStreams: false,
 } as any, databaseId);
 
 // Export Firebase Auth
 export const auth = getAuth(app);
+

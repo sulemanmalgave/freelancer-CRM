@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo, memo } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Plus, Check, X, ShieldAlert, Star, Phone, Mail, Calendar, UserCheck, Trash2, Edit3, Award, Sparkles } from "lucide-react";
 import { Lead, Client } from "../types";
@@ -14,7 +14,7 @@ interface LeadsViewProps {
   onConvertToClient: (lead: Lead) => void;
 }
 
-export default function LeadsView({
+function LeadsView({
   leads,
   currency,
   searchTerm,
@@ -39,14 +39,17 @@ export default function LeadsView({
 
   const [activePipelineStage, setActivePipelineStage] = useState<"All" | Lead["status"]>("All");
 
-  const filteredLeads = leads.filter((l) => {
-    const matchesSearch =
-      l.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      l.companyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      l.source.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStage = activePipelineStage === "All" || l.status === activePipelineStage;
-    return matchesSearch && matchesStage;
-  });
+  const filteredLeads = useMemo(() => {
+    const term = searchTerm.toLowerCase();
+    return leads.filter((l) => {
+      const matchesSearch =
+        l.name.toLowerCase().includes(term) ||
+        l.companyName.toLowerCase().includes(term) ||
+        l.source.toLowerCase().includes(term);
+      const matchesStage = activePipelineStage === "All" || l.status === activePipelineStage;
+      return matchesSearch && matchesStage;
+    });
+  }, [leads, searchTerm, activePipelineStage]);
 
   const resetForm = () => {
     setName("");
@@ -149,11 +152,17 @@ export default function LeadsView({
       {/* Interactive modal form */}
       <AnimatePresence>
         {(isAdding || editingLead) && (
-          <div className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md overflow-y-auto">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md overflow-y-auto"
+          >
             <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
+              initial={{ scale: 0.95, opacity: 0, y: 12 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 12 }}
+              transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
               className="w-full max-w-md glass-modal rounded-2xl shadow-2xl overflow-hidden my-6"
             >
               <div className="p-5 border-b border-black/5 flex items-center justify-between">
@@ -312,9 +321,11 @@ export default function LeadsView({
                 </div>
               </form>
             </motion.div>
-          </div>
+          </motion.div>
         )}
-      </AnimatePresence>      {/* Render Lead items */}
+      </AnimatePresence>
+
+      {/* Render Lead items */}
       {filteredLeads.length === 0 ? (
         <div className="flex flex-col items-center justify-center p-12 rounded-2xl glass-panel text-center">
           <Star className="w-12 h-12 text-slate-300 mb-3" />
@@ -334,118 +345,127 @@ export default function LeadsView({
           )}
         </div>
       ) : (
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredLeads.map((l) => {
-            const isDueToday = l.followUpDate && new Date(l.followUpDate).toDateString() === new Date().toDateString();
-            return (
-              <motion.div
-                layout
-                key={l.id}
-                className="p-5 rounded-2xl glass-panel glass-highlight transition-all flex flex-col justify-between group"
-              >
-                <div>
-                  <div className="flex items-start justify-between gap-2 mb-3">
-                    <div>
-                      <h4 className="font-bold text-slate-800 text-sm line-clamp-1">
-                        {l.name}
-                      </h4>
-                      {l.companyName && (
-                        <span className="text-[11px] font-semibold text-slate-400 mt-0.5 block line-clamp-1">
-                          Org: {l.companyName}
-                        </span>
-                      )}
-                    </div>
-                    <span className={`text-[9px] uppercase font-bold px-2 py-0.5 rounded-full ${
-                      l.status === "Won"
-                        ? "bg-emerald-500/10 text-emerald-650"
-                        : l.status === "Proposal Sent" || l.status === "Contacted"
-                        ? "bg-indigo-500/10 text-indigo-650"
-                        : l.status === "New"
-                        ? "bg-sky-500/10 text-sky-655"
-                        : "bg-red-500/10 text-red-550"
-                    }`}>
-                      {l.status}
-                    </span>
-                  </div>
-
-                  <div className="space-y-1.5 text-xs text-slate-500 border-t border-black/5 pt-3 mb-4">
-                    <div className="flex items-center justify-between">
-                      <span>Proximity Source:</span>
-                      <strong className="font-medium text-slate-700 bg-black/5 px-1.5 py-0.5 rounded-md">
-                        {l.source}
-                      </strong>
+        <motion.div layout className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <AnimatePresence mode="popLayout">
+            {filteredLeads.map((l) => {
+              const isDueToday = l.followUpDate && new Date(l.followUpDate).toDateString() === new Date().toDateString();
+              return (
+                <motion.div
+                  layout
+                  initial={{ opacity: 0, scale: 0.96, y: 12 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.94, y: -8 }}
+                  transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                  whileHover={{ y: -3, transition: { duration: 0.15 } }}
+                  key={l.id}
+                  className="p-5 rounded-2xl glass-panel glass-highlight transition-all flex flex-col justify-between group"
+                >
+                  <div>
+                    <div className="flex items-start justify-between gap-2 mb-3">
+                      <div>
+                        <h4 className="font-bold text-slate-800 text-sm line-clamp-1">
+                          {l.name}
+                        </h4>
+                        {l.companyName && (
+                          <span className="text-[11px] font-semibold text-slate-400 mt-0.5 block line-clamp-1">
+                            Org: {l.companyName}
+                          </span>
+                        )}
+                      </div>
+                      <span className={`text-[9px] uppercase font-bold px-2 py-0.5 rounded-full ${
+                        l.status === "Won"
+                          ? "bg-emerald-500/10 text-emerald-650"
+                          : l.status === "Proposal Sent" || l.status === "Contacted"
+                          ? "bg-indigo-500/10 text-indigo-650"
+                          : l.status === "New"
+                          ? "bg-sky-500/10 text-sky-655"
+                          : "bg-red-500/10 text-red-550"
+                      }`}>
+                        {l.status}
+                      </span>
                     </div>
 
-                    {l.budget > 0 && (
+                    <div className="space-y-1.5 text-xs text-slate-500 border-t border-black/5 pt-3 mb-4">
                       <div className="flex items-center justify-between">
-                        <span>Expected Value:</span>
-                        <strong className="font-bold text-slate-800 font-mono">
-                          {formatCurrency(l.budget, currency)}
+                        <span>Proximity Source:</span>
+                        <strong className="font-medium text-slate-700 bg-black/5 px-1.5 py-0.5 rounded-md">
+                          {l.source}
                         </strong>
                       </div>
-                    )}
 
-                    {l.followUpDate && (
-                      <div className="flex items-center justify-between">
-                        <span>Follow-up Due:</span>
-                        <span className={`flex items-center gap-1 text-[11px] font-medium ${
-                          isDueToday ? "text-amber-500 font-semibold" : "text-slate-550"
-                        }`}>
-                          <Calendar size={11} />
-                          <span>{new Date(l.followUpDate).toLocaleDateString()}</span>
-                        </span>
-                      </div>
-                    )}
+                      {l.budget > 0 && (
+                        <div className="flex items-center justify-between">
+                          <span>Expected Value:</span>
+                          <strong className="font-bold text-slate-800 font-mono">
+                            {formatCurrency(l.budget, currency)}
+                          </strong>
+                        </div>
+                      )}
 
-                    {l.notes && (
-                      <p className="text-[11px] text-slate-450 p-2 rounded-lg bg-black/5 italic mt-2 line-clamp-2">
-                        "{l.notes}"
-                      </p>
-                    )}
+                      {l.followUpDate && (
+                        <div className="flex items-center justify-between">
+                          <span>Follow-up Due:</span>
+                          <span className={`flex items-center gap-1 text-[11px] font-medium ${
+                            isDueToday ? "text-amber-500 font-semibold" : "text-slate-550"
+                          }`}>
+                            <Calendar size={11} />
+                            <span>{new Date(l.followUpDate).toLocaleDateString()}</span>
+                          </span>
+                        </div>
+                      )}
+
+                      {l.notes && (
+                        <p className="text-[11px] text-slate-450 p-2 rounded-lg bg-black/5 italic mt-2 line-clamp-2">
+                          "{l.notes}"
+                        </p>
+                      )}
+                    </div>
                   </div>
-                </div>
 
-                <div className="flex items-center justify-between gap-1 border-t border-black/5 pt-3 opacity-90 group-hover:opacity-100 transition-opacity">
-                  {/* Convert to client option */}
-                  {l.status !== "Won" ? (
-                    <button
-                      onClick={() => onConvertToClient(l)}
-                      className="p-1 px-2.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-650 hover:text-white hover:bg-indigo-600 rounded-lg text-[10px] font-extrabold transition-all flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <UserCheck size={11} />
-                      <span>Convert to Client</span>
-                    </button>
-                  ) : (
-                    <span className="text-[10px] text-emerald-500 font-bold flex items-center gap-1">
-                      <Award size={12} />
-                      <span>Account Won!</span>
-                    </span>
-                  )}
+                  <div className="flex items-center justify-between gap-1 border-t border-black/5 pt-3 opacity-90 group-hover:opacity-100 transition-opacity">
+                    {/* Convert to client option */}
+                    {l.status !== "Won" ? (
+                      <button
+                        onClick={() => onConvertToClient(l)}
+                        className="p-1 px-2.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-650 hover:text-white hover:bg-indigo-600 rounded-lg text-[10px] font-extrabold transition-all flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <UserCheck size={11} />
+                        <span>Convert to Client</span>
+                      </button>
+                    ) : (
+                      <span className="text-[10px] text-emerald-500 font-bold flex items-center gap-1">
+                        <Award size={12} />
+                        <span>Account Won!</span>
+                      </span>
+                    )}
 
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => handleStartEdit(l)}
-                      className="p-1 hover:text-indigo-600 text-slate-400 transition-colors cursor-pointer"
-                    >
-                      <Edit3 size={13} />
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (confirm(`Remove prospect lead "${l.name}"?`)) {
-                          onDeleteLead(l.id);
-                        }
-                      }}
-                      className="p-1 hover:text-red-500 text-slate-400 transition-colors cursor-pointer"
-                    >
-                      <Trash2 size={13} />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleStartEdit(l)}
+                        className="p-1 hover:text-indigo-600 text-slate-400 transition-colors cursor-pointer"
+                      >
+                        <Edit3 size={13} />
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (confirm(`Remove prospect lead "${l.name}"?`)) {
+                            onDeleteLead(l.id);
+                          }
+                        }}
+                        className="p-1 hover:text-red-500 text-slate-400 transition-colors cursor-pointer"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
                   </div>
-                </div>
-              </motion.div>
-            );
-          })}
-        </div>
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
+        </motion.div>
       )}
     </div>
   );
 }
+
+export default memo(LeadsView);

@@ -124,5 +124,38 @@ service cloud.firestore {
       allow delete: if isValidId(documentId) 
         && (resource == null || isProUser(resource.data.freelancerId));
     }
+
+    // Records collection (Notes & Voice Recordings)
+    match /records/{recordId} {
+      allow read: if isValidId(recordId);
+      allow create: if isValidId(recordId) 
+        && request.resource.data.id == recordId 
+        && isValidId(request.resource.data.freelancerId)
+        && isProUser(request.resource.data.freelancerId);
+      allow update: if isValidId(recordId) 
+        && request.resource.data.id == recordId 
+        && isValidId(request.resource.data.freelancerId)
+        && isProUser(request.resource.data.freelancerId);
+      allow delete: if isValidId(recordId) 
+        && (resource == null || isProUser(resource.data.freelancerId));
+    }
+
+    // Follow-ups collection
+    match /followups/{followupId} {
+      allow read: if isValidId(followupId);
+      allow create, update: if isValidId(followupId) 
+        && request.resource.data.id == followupId 
+        && isValidId(request.resource.data.freelancerId);
+      allow delete: if isValidId(followupId);
+    }
+
+    // Proposals collection
+    match /proposals/{proposalId} {
+      allow read: if isValidId(proposalId);
+      allow create, update: if isValidId(proposalId) 
+        && request.resource.data.id == proposalId 
+        && isValidId(request.resource.data.freelancerId);
+      allow delete: if isValidId(proposalId);
+    }
   }
 }

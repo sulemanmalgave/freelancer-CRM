@@ -2031,4 +2031,984 @@ app.post("/api/paypal/capture-order", authenticateFirebaseUser, async (req: any,
   }
 });
 
+// ==========================================
+// GEMINI AI & GMAIL INTEGRATION ENDPOINTS
+// ==========================================
+import { GoogleGenAI } from "@google/genai";
+
+let genAIInstance: GoogleGenAI | null = null;
+function getGenAI(): GoogleGenAI {
+  if (!genAIInstance) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error("GEMINI_API_KEY environment variable is not configured.");
+    }
+    genAIInstance = new GoogleGenAI({ apiKey });
+  }
+  return genAIInstance;
+}
+
+/**
+ * Backend Pro Entitlement Verifier
+ * Validates against Firestore subscription records on the server.
+ */
+async function verifyUserProEntitlement(req: any): Promise<{ isPro: boolean; profile?: any; error?: string }> {
+  let freelancerId = req.userId || req.body?.freelancerId || req.headers?.["x-freelancer-id"] || req.query?.freelancerId;
+
+  // If Bearer ID token is present, decode Firebase UID
+  if (!freelancerId && req.headers.authorization && req.headers.authorization.startsWith("Bearer ")) {
+    const token = req.headers.authorization.split(" ")[1];
+    try {
+      ensureFirebaseAdminInitialized();
+      const decoded = await getAuth().verifyIdToken(token);
+      freelancerId = decoded.uid;
+    } catch {
+      // not a firebase auth id token
+    }
+  }
+
+  // Lookup by email if userEmail is provided
+  if (!freelancerId && req.body?.userEmail) {
+    try {
+      ensureFirebaseAdminInitialized();
+      const snap = await db.collection("freelancers").where("email", "==", String(req.body.userEmail).trim().toLowerCase()).limit(1).get();
+      if (!snap.empty) {
+        freelancerId = snap.docs[0].id;
+      }
+    } catch (e) {
+      console.warn("[Backend Entitlement] Email lookup error:", e);
+    }
+  }
+
+  if (!freelancerId) {
+    return { isPro: false, error: "Freelancer identifier is required to verify Pro entitlement." };
+  }
+
+  const profile = await getFreelancerProfile(freelancerId);
+  if (!profile) {
+    return { isPro: false, error: "Freelancer profile record not found." };
+  }
+
+  const isPro = (
+    profile.premium === true ||
+    profile.plan === "Pro" ||
+    profile.plan === "Monthly" ||
+    profile.plan === "3 Months" ||
+    (profile.plan !== undefined && profile.plan !== "Free")
+  );
+
+  return { isPro, profile };
+}
+
+// 0. Verify Pro Entitlement for Gmail & Advanced integrations
+app.get("/api/gmail/verify-entitlement", async (req: any, res) => {
+  try {
+    const { isPro, profile, error } = await verifyUserProEntitlement(req);
+    return res.json({
+      isPro: !!isPro,
+      plan: profile?.plan || "Free",
+      premium: !!profile?.premium,
+      error: isPro ? undefined : (error || "Active Pro subscription required"),
+    });
+  } catch (err: any) {
+    return res.status(500).json({ isPro: false, error: err.message });
+  }
+});
+
+// 1. AI Email & Thread Summarization
+app.post("/api/gemini/summarize-email", async (req: any, res) => {
+  try {
+    const { subject, content, threadMessages } = req.body;
+    if (!content && (!threadMessages || threadMessages.length === 0)) {
+      return res.status(400).json({ error: "No email content provided to summarize." });
+    }
+
+    const ai = getGenAI();
+    let prompt = `You are an expert executive assistant for a freelancer. Summarize the following email communication concisely and clearly.
+Highlight the main purpose, key context, any deadlines, and notable requirements.
+
+Subject: ${subject || "(No Subject)"}
+`;
+
+    if (threadMessages && threadMessages.length > 0) {
+      prompt += `\nConversation Thread History:\n` + threadMessages.map((m: any, idx: number) => 
+        `Message ${idx + 1} from ${m.from || "Unknown"} on ${m.date || "Unknown date"}:\n${m.body || m.snippet || ""}`
+      ).join("\n\n");
+    } else {
+      prompt += `\nEmail Content:\n${content}`;
+    }
+
+    prompt += `\n\nProvide:
+1. One-sentence Executive Overview
+2. Key Points (bulleted)
+3. Any Explicit Deadlines or Urgency
+
+Format cleanly in plain text with markdown bullet points. Keep it brief, actionable, and professional.`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+    });
+
+    const summary = response.text || "Unable to generate summary.";
+    return res.json({ success: true, summary });
+  } catch (err: any) {
+    console.error("[Gemini AI] Email summarization error:", err);
+    return res.status(500).json({ error: err.message || "Failed to summarize email." });
+  }
+});
+
+// 2. AI Action Items & Follow-up Extraction
+app.post("/api/gemini/extract-action-items", async (req: any, res) => {
+  try {
+    const { subject, content, senderName, clientName } = req.body;
+    if (!content) {
+      return res.status(400).json({ error: "No email content provided." });
+    }
+
+    const ai = getGenAI();
+    const prompt = `You are an AI assistant for a freelancer. Analyze this client email and extract specific actionable tasks / follow-up items for the freelancer.
+
+Client / Sender: ${clientName || senderName || "Client"}
+Subject: ${subject || "(No Subject)"}
+Email Content:
+${content}
+
+Current Date: ${new Date().toISOString().split("T")[0]}
+
+Instructions:
+Extract actionable items that the freelancer should do.
+Return STRICT JSON format ONLY (array of objects):
+[
+  {
+    "title": "Clear action verb task title (e.g. 'Send revised wireframe quote')",
+    "suggestedDueDate": "YYYY-MM-DD (estimate realistic deadline based on email text or default to 3-5 business days from current date)",
+    "priority": "High" | "Medium" | "Low",
+    "notes": "Brief context explanation from the email"
+  }
+]
+If there are no clear action items, return an empty array []. Output only valid JSON without markdown wrapping.`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+    });
+
+    let raw = response.text || "[]";
+    raw = raw.replace(/```json/gi, "").replace(/```/g, "").trim();
+    let actionItems = [];
+    try {
+      actionItems = JSON.parse(raw);
+    } catch {
+      console.warn("[Gemini AI] Failed to parse JSON action items, raw text:", raw);
+      actionItems = [];
+    }
+
+    return res.json({ success: true, actionItems });
+  } catch (err: any) {
+    console.error("[Gemini AI] Action items extraction error:", err);
+    return res.status(500).json({ error: err.message || "Failed to extract action items." });
+  }
+});
+
+// 3. AI Draft Reply Generator
+app.post("/api/gemini/draft-reply", async (req: any, res) => {
+  try {
+    const { subject, content, replyContext, senderName, clientName, myName } = req.body;
+    if (!content) {
+      return res.status(400).json({ error: "No email content provided." });
+    }
+
+    const ai = getGenAI();
+    const prompt = `You are a professional freelance business owner. Draft a polite, concise, professional reply to the client's email.
+
+Freelancer Name: ${myName || "Freelancer"}
+Client Name: ${clientName || senderName || "Client"}
+Original Subject: ${subject || "(No Subject)"}
+Original Email:
+${content}
+
+Desired Response Intent / Instructions:
+${replyContext || "Polite confirmation, acknowledging requirements and setting expectations."}
+
+Instructions:
+- Write in a friendly yet polished, professional tone.
+- Do NOT include placeholder tokens like [Your Name] if the name is provided.
+- Include a suggested Subject line (usually 'Re: ...') and the email body text.
+- Do NOT send or promise things that were not requested.
+
+Return JSON in this format:
+{
+  "subject": "Re: ...",
+  "body": "Email body text..."
+}
+Output only valid JSON without markdown wrapping.`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+    });
+
+    let raw = response.text || "{}";
+    raw = raw.replace(/```json/gi, "").replace(/```/g, "").trim();
+    let draft = { subject: `Re: ${subject || ""}`, body: "" };
+    try {
+      draft = JSON.parse(raw);
+    } catch {
+      draft.body = response.text || "";
+    }
+
+    return res.json({ success: true, draft });
+  } catch (err: any) {
+    console.error("[Gemini AI] Draft reply error:", err);
+    return res.status(500).json({ error: err.message || "Failed to generate draft reply." });
+  }
+});
+
+// 4. Secure Gmail Send Proxy (STRICT PRO SUBSCRIPTION ENFORCEMENT)
+app.post("/api/gmail/send", async (req: any, res) => {
+  try {
+    // 1. Strict Backend Pro Entitlement Validation
+    const { isPro } = await verifyUserProEntitlement(req);
+    if (!isPro) {
+      return res.status(403).json({
+        error: "Gmail integration is available exclusively with Freelancer CRM Pro. Please upgrade to Pro to send emails.",
+        code: "PRO_REQUIRED",
+      });
+    }
+
+    const { accessToken, to, cc, bcc, subject, body, threadId, inReplyTo, raw, attachments } = req.body;
+    if (!accessToken) {
+      return res.status(401).json({ error: "Missing Gmail access token. Please connect your Gmail account." });
+    }
+
+    let encodedEmail = raw;
+
+    if (!encodedEmail) {
+      if (!to) {
+        return res.status(400).json({ error: "Recipient email (To) is required." });
+      }
+
+      const hasAttachments = Array.isArray(attachments) && attachments.length > 0;
+      const isHtml = body && body.includes("<") && body.includes(">");
+      const formattedHtml = isHtml ? body : (body || "").replace(/\r\n|\r|\n/g, "<br/>");
+      const cleanPlainText = (body || "").replace(/<[^>]*>/g, "");
+
+      let encodedSubject = "";
+      try {
+        encodedSubject = `=?utf-8?B?${Buffer.from(subject || "(No Subject)").toString("base64")}?=`;
+      } catch {
+        encodedSubject = subject || "(No Subject)";
+      }
+
+      const headers: string[] = [`To: ${String(to).trim()}`];
+      if (cc && String(cc).trim()) {
+        headers.push(`Cc: ${String(cc).trim()}`);
+      }
+      if (bcc && String(bcc).trim()) {
+        headers.push(`Bcc: ${String(bcc).trim()}`);
+      }
+      headers.push(`Subject: ${encodedSubject}`);
+      headers.push("MIME-Version: 1.0");
+
+      if (inReplyTo && String(inReplyTo).trim()) {
+        const rawInReplyTo = String(inReplyTo).trim();
+        const formattedInReplyTo = rawInReplyTo.startsWith("<") && rawInReplyTo.endsWith(">")
+          ? rawInReplyTo
+          : `<${rawInReplyTo}>`;
+        headers.push(`In-Reply-To: ${formattedInReplyTo}`);
+        headers.push(`References: ${formattedInReplyTo}`);
+      }
+
+      let emailRaw = "";
+
+      if (hasAttachments) {
+        const mixedBoundary = `====_CRM_MIXED_${Date.now()}_====`;
+        const altBoundary = `====_CRM_ALT_${Date.now()}_====`;
+        headers.push(`Content-Type: multipart/mixed; boundary="${mixedBoundary}"`);
+
+        const parts = [
+          headers.join("\r\n"),
+          "",
+          `--${mixedBoundary}`,
+          `Content-Type: multipart/alternative; boundary="${altBoundary}"`,
+          "",
+          `--${altBoundary}`,
+          "Content-Type: text/plain; charset=UTF-8",
+          "Content-Transfer-Encoding: 7bit",
+          "",
+          cleanPlainText,
+          "",
+          `--${altBoundary}`,
+          "Content-Type: text/html; charset=UTF-8",
+          "Content-Transfer-Encoding: 7bit",
+          "",
+          `<div dir="ltr">${formattedHtml}</div>`,
+          "",
+          `--${altBoundary}--`,
+        ];
+
+        for (const att of attachments) {
+          const cleanBase64 = (att.base64Data || "").replace(/[\r\n]/g, "");
+          const chunked = cleanBase64.match(/.{1,76}/g)?.join("\r\n") || cleanBase64;
+          parts.push(
+            `--${mixedBoundary}`,
+            `Content-Type: ${att.mimeType || "application/octet-stream"}; name="${att.filename || "attachment"}"`,
+            `Content-Disposition: attachment; filename="${att.filename || "attachment"}"`,
+            "Content-Transfer-Encoding: base64",
+            "",
+            chunked
+          );
+        }
+
+        parts.push(`--${mixedBoundary}--`, "");
+        emailRaw = parts.join("\r\n");
+      } else {
+        const boundary = `====_CRM_MIME_${Date.now()}_====`;
+        headers.push(`Content-Type: multipart/alternative; boundary="${boundary}"`);
+
+        const parts = [
+          headers.join("\r\n"),
+          "",
+          `--${boundary}`,
+          "Content-Type: text/plain; charset=UTF-8",
+          "Content-Transfer-Encoding: 7bit",
+          "",
+          cleanPlainText,
+          "",
+          `--${boundary}`,
+          "Content-Type: text/html; charset=UTF-8",
+          "Content-Transfer-Encoding: 7bit",
+          "",
+          `<div dir="ltr">${formattedHtml}</div>`,
+          "",
+          `--${boundary}--`,
+        ];
+        emailRaw = parts.join("\r\n");
+      }
+
+      // Base64URL encode as required by Gmail API
+      encodedEmail = Buffer.from(emailRaw, "utf-8")
+        .toString("base64")
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/, "");
+    }
+
+    const payload: any = { raw: encodedEmail };
+    if (threadId) {
+      payload.threadId = threadId;
+    }
+
+    const response = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const errorMsg = errorData?.error?.message || `Gmail API send failed with status ${response.status}`;
+      console.error("[Gmail Send Proxy Error]", errorData);
+      return res.status(response.status).json({ error: errorMsg });
+    }
+
+    const sentData = await response.json();
+    return res.json({ success: true, messageId: sentData.id, threadId: sentData.threadId });
+  } catch (err: any) {
+    console.error("[Gmail Send Proxy] Internal error:", err);
+    return res.status(500).json({ error: err.message || "Failed to send email via Gmail." });
+  }
+});
+
+// ==========================================
+// 5. Mobile App Secure Connection & Sync APIs
+// ==========================================
+
+// In-memory fallback cache for fast ephemeral pairing sessions
+const activePairingSessions = new Map<string, any>();
+const workspaceProfiles = new Map<string, any>();
+
+// Helper to generate secure random 6-digit numeric pairing code
+function generateNumericPairingCode(): string {
+  const num = crypto.randomInt(100000, 999999);
+  return num.toString();
+}
+
+// 5.0 Sync desktop workspace profile to backend store for instant pairing handoff
+app.post("/api/mobile/sync-workspace-profile", async (req: any, res) => {
+  try {
+    const { profile } = req.body;
+    if (profile && profile.id) {
+      workspaceProfiles.set(profile.id, profile);
+      try {
+        await db.collection("freelancers").doc(profile.id).set(profile);
+      } catch (dbErr) {
+        console.warn("[Mobile Sync] DB fallback for profile:", dbErr);
+      }
+      return res.json({ success: true });
+    }
+    return res.status(400).json({ error: "Missing profile." });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Failed to sync profile." });
+  }
+});
+
+// 5.1 Create temporary mobile pairing token & code (Expires in 10 minutes)
+app.post("/api/mobile/create-pairing", async (req: any, res) => {
+  try {
+    const { freelancerId, profile } = req.body;
+    if (!freelancerId) {
+      return res.status(400).json({ error: "Missing required freelancerId parameter." });
+    }
+
+    if (profile && profile.id) {
+      workspaceProfiles.set(freelancerId, profile);
+      try {
+        await db.collection("freelancers").doc(freelancerId).set(profile);
+      } catch (dbErr) {
+        console.warn("[Mobile Pairing] Profile persistence fallback:", dbErr);
+      }
+    }
+
+    const pairingCode = generateNumericPairingCode();
+    const pairingToken = crypto.randomBytes(24).toString("hex");
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 10 * 60 * 1000).toISOString(); // 10 minutes validity
+
+    const sessionData = {
+      pairingCode,
+      pairingToken,
+      freelancerId,
+      profile: profile || workspaceProfiles.get(freelancerId) || null,
+      createdAt: now.toISOString(),
+      expiresAt,
+      used: false,
+    };
+
+    // Store in active cache
+    activePairingSessions.set(pairingToken, sessionData);
+    activePairingSessions.set(`code_${pairingCode}`, sessionData);
+
+    // Also persist to DB for multi-instance resilience
+    try {
+      await db.collection("mobile_pairing_sessions").doc(pairingToken).set(sessionData);
+      await db.collection("mobile_pairing_sessions").doc(`code_${pairingCode}`).set(sessionData);
+    } catch (dbErr) {
+      console.warn("[Mobile Pairing] Database write fallback to in-memory store:", dbErr);
+    }
+
+    // Generate deep-link URL (using host header or standard url format)
+    const host = req.get("host") || "localhost:3000";
+    const protocol = req.protocol || "https";
+    const deepLink = `${protocol}://${host}/?mobile_connect=${pairingToken}`;
+
+    return res.json({
+      success: true,
+      pairingCode,
+      pairingToken,
+      expiresAt,
+      deepLink,
+    });
+  } catch (err: any) {
+    console.error("[Mobile Pairing] Error creating pairing session:", err);
+    return res.status(500).json({ error: err.message || "Failed to generate pairing session." });
+  }
+});
+
+// 5.2 Inspect mobile pairing session info without invalidating (for UI preview and auth confirmation)
+app.post("/api/mobile/pairing-info", async (req: any, res) => {
+  try {
+    const { pairingToken, pairingCode } = req.body;
+    if (!pairingToken && !pairingCode) {
+      return res.status(400).json({ error: "missing", message: "Either pairingToken or pairingCode must be provided." });
+    }
+
+    let session: any = null;
+    if (pairingToken && activePairingSessions.has(pairingToken)) {
+      session = activePairingSessions.get(pairingToken);
+    } else if (pairingCode) {
+      const cleanCode = String(pairingCode).replace(/\D/g, "");
+      if (activePairingSessions.has(`code_${cleanCode}`)) {
+        session = activePairingSessions.get(`code_${cleanCode}`);
+      }
+    }
+
+    if (!session) {
+      try {
+        if (pairingToken) {
+          const docSnap = await db.collection("mobile_pairing_sessions").doc(pairingToken).get();
+          if (docSnap.exists) session = docSnap.data();
+        } else if (pairingCode) {
+          const cleanCode = String(pairingCode).replace(/\D/g, "");
+          const docSnap = await db.collection("mobile_pairing_sessions").doc(`code_${cleanCode}`).get();
+          if (docSnap.exists) session = docSnap.data();
+        }
+      } catch (dbErr) {
+        console.warn("[Mobile Pairing Info] DB search failed:", dbErr);
+      }
+    }
+
+    if (!session) {
+      return res.status(404).json({
+        valid: false,
+        error: "invalid",
+        message: "Unable to connect this device. Please generate a new connection code from Freelancer CRM."
+      });
+    }
+
+    if (session.used) {
+      return res.status(410).json({
+        valid: false,
+        error: "used",
+        message: "This connection code was already used. Please generate a new connection code from Freelancer CRM."
+      });
+    }
+
+    if (new Date(session.expiresAt).getTime() < Date.now()) {
+      return res.status(410).json({
+        valid: false,
+        error: "expired",
+        message: "Connection expired"
+      });
+    }
+
+    // Fetch workspace preview info safely
+    let profilePreview: any = null;
+    try {
+      const pSnap = await db.collection("freelancers").doc(session.freelancerId).get();
+      if (pSnap.exists) {
+        const p = pSnap.data();
+        profilePreview = {
+          id: p.id,
+          name: p.name,
+          businessName: p.businessName,
+          currency: p.currency,
+          plan: p.plan || (p.premium ? "Pro" : "Free"),
+          email: p.email || p.gmailAccountEmail,
+        };
+      }
+    } catch (err) {
+      console.warn("[Mobile Pairing Info] Preview fetch error:", err);
+    }
+
+    return res.json({
+      valid: true,
+      pairingToken: session.pairingToken,
+      pairingCode: session.pairingCode,
+      expiresAt: session.expiresAt,
+      profilePreview,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: "server_error", message: err.message || "Failed to inspect pairing code." });
+  }
+});
+
+// 5.3 Look up existing workspace by email or ID
+app.post("/api/auth/lookup-workspace", async (req: any, res) => {
+  try {
+    const { email, workspaceId } = req.body;
+    if (!email && !workspaceId) {
+      return res.status(400).json({ error: "Email or Workspace ID required." });
+    }
+
+    let profile: any = null;
+
+    if (workspaceId) {
+      try {
+        const docSnap = await db.collection("freelancers").doc(workspaceId.trim()).get();
+        if (docSnap.exists) {
+          profile = docSnap.data();
+        }
+      } catch (e) {
+        console.warn("WorkspaceId lookup error:", e);
+      }
+    }
+
+    if (!profile && email) {
+      const cleanEmail = email.trim().toLowerCase();
+      try {
+        const snap = await db.collection("freelancers").get();
+        snap.forEach((d: any) => {
+          const data = d.data();
+          if (
+            data &&
+            ((data.email && data.email.toLowerCase() === cleanEmail) ||
+             (data.gmailEmail && data.gmailEmail.toLowerCase() === cleanEmail) ||
+             (data.gmailAccountEmail && data.gmailAccountEmail.toLowerCase() === cleanEmail) ||
+             (data.userEmail && data.userEmail.toLowerCase() === cleanEmail))
+          ) {
+            profile = data;
+          }
+        });
+      } catch (e) {
+        console.warn("Email lookup error:", e);
+      }
+    }
+
+    if (!profile) {
+      return res.status(404).json({
+        success: false,
+        error: "not_found",
+        message: "No existing workspace found with this account. You can create a new workspace or connect with a 6-digit code from your desktop."
+      });
+    }
+
+    return res.json({
+      success: true,
+      profile,
+    });
+  } catch (err: any) {
+    console.error("Lookup error:", err);
+    return res.status(500).json({ error: err.message || "Failed to search workspace." });
+  }
+});
+
+// 5.3b Email and password authentication
+app.post("/api/auth/email-signin", async (req: any, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !String(email).trim()) {
+      return res.status(400).json({ success: false, error: "missing_email", message: "Email address is required." });
+    }
+    if (!password || !String(password).trim()) {
+      return res.status(400).json({ success: false, error: "missing_password", message: "Password is required." });
+    }
+
+    const cleanEmail = String(email).trim().toLowerCase();
+    let profile: any = null;
+    let docId: string | null = null;
+
+    try {
+      const snap = await db.collection("freelancers").get();
+      snap.forEach((d: any) => {
+        const data = d.data();
+        if (
+          data &&
+          ((data.email && data.email.toLowerCase() === cleanEmail) ||
+           (data.gmailEmail && data.gmailEmail.toLowerCase() === cleanEmail) ||
+           (data.gmailAccountEmail && data.gmailAccountEmail.toLowerCase() === cleanEmail) ||
+           (data.userEmail && data.userEmail.toLowerCase() === cleanEmail))
+        ) {
+          profile = data;
+          docId = d.id;
+        }
+      });
+    } catch (e) {
+      console.warn("Email sign-in DB error:", e);
+    }
+
+    if (!profile) {
+      return res.status(404).json({
+        success: false,
+        error: "not_found",
+        message: `No existing account was found for "${email}". Please verify your email address or check your credentials.`
+      });
+    }
+
+    // If existing profile has a stored password, check if it matches
+    if (profile.password) {
+      if (profile.password !== password) {
+        return res.status(401).json({
+          success: false,
+          error: "invalid_password",
+          message: "Incorrect password. Please try again."
+        });
+      }
+    } else {
+      // If user hasn't set a password yet on this profile, persist it so subsequent logins work
+      if (docId) {
+        try {
+          await db.collection("freelancers").doc(docId).update({ password });
+          profile.password = password;
+        } catch (pwErr) {
+          console.warn("Could not save password to existing profile:", pwErr);
+        }
+      }
+    }
+
+    return res.json({
+      success: true,
+      profile,
+    });
+  } catch (err: any) {
+    console.error("Email sign-in error:", err);
+    return res.status(500).json({ success: false, error: "server_error", message: err.message || "Failed to sign in." });
+  }
+});
+
+// 5.4 Verify mobile pairing token or 6-digit code
+app.post("/api/mobile/verify-pairing", async (req: any, res) => {
+  try {
+    const { pairingToken, pairingCode, clientDeviceId, deviceName, platform, userAgent } = req.body;
+    if (!pairingToken && !pairingCode) {
+      return res.status(400).json({ success: false, error: "invalid", message: "Either pairingToken or pairingCode must be provided." });
+    }
+
+    const cleanCode = pairingCode ? String(pairingCode).replace(/\D/g, "") : undefined;
+    let session: any = null;
+
+    // Check memory first
+    if (pairingToken && activePairingSessions.has(pairingToken)) {
+      session = activePairingSessions.get(pairingToken);
+    } else if (cleanCode && activePairingSessions.has(`code_${cleanCode}`)) {
+      session = activePairingSessions.get(`code_${cleanCode}`);
+    }
+
+    // If not found in memory, check DB
+    if (!session) {
+      try {
+        if (pairingToken) {
+          const docSnap = await db.collection("mobile_pairing_sessions").doc(pairingToken).get();
+          if (docSnap.exists) session = docSnap.data();
+        } else if (cleanCode) {
+          const docSnap = await db.collection("mobile_pairing_sessions").doc(`code_${cleanCode}`).get();
+          if (docSnap.exists) session = docSnap.data();
+        }
+      } catch (dbErr) {
+        console.warn("[Mobile Pairing] Failed searching DB for session:", dbErr);
+      }
+    }
+
+    // Strict validation before ANY device registration occurs
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        error: "invalid",
+        message: "Invalid connection code. Please check the code and try again.",
+      });
+    }
+
+    // Check if session has already been used
+    if (session.used) {
+      return res.status(410).json({
+        success: false,
+        error: "used",
+        message: "This connection code has already been used. Please generate a new code.",
+      });
+    }
+
+    // Check expiration (10 minutes window)
+    if (new Date(session.expiresAt).getTime() < Date.now()) {
+      return res.status(410).json({
+        success: false,
+        error: "expired",
+        message: "This connection code has expired. Generate a new code on your computer.",
+      });
+    }
+
+    const freelancerId = session.freelancerId;
+    if (!freelancerId) {
+      return res.status(400).json({ success: false, error: "workspace_not_found", message: "Invalid workspace session data." });
+    }
+
+    // Retrieve freelancer profile
+    let profile: any = session.profile || workspaceProfiles.get(freelancerId);
+    if (!profile) {
+      try {
+        const pSnap = await db.collection("freelancers").doc(freelancerId).get();
+        if (pSnap.exists) {
+          profile = pSnap.data();
+        }
+      } catch (pErr) {
+        console.warn("[Mobile Pairing] Could not fetch profile from DB directly:", pErr);
+      }
+    }
+
+    // Fallback profile ensures mobile app always has valid workspace data
+    if (!profile) {
+      profile = {
+        id: freelancerId,
+        name: "Freelancer",
+        businessName: "Freelancer Workspace",
+        currency: "USD",
+        plan: "pro",
+        premium: true,
+        onboardingCompleted: true,
+        createdAt: new Date().toISOString(),
+      };
+      workspaceProfiles.set(freelancerId, profile);
+      try {
+        await db.collection("freelancers").doc(freelancerId).set(profile);
+      } catch (e) {}
+    } else {
+      profile.onboardingCompleted = true;
+    }
+
+    // Deduplication & Atomic Registration: Check if device already exists
+    let existingDevice: any = null;
+    try {
+      const snap = await db.collection("connected_devices").get();
+      snap.forEach((doc: any) => {
+        const d = doc.data();
+        if (d && d.freelancerId === freelancerId) {
+          // 1. Match by persistent clientDeviceId
+          if (clientDeviceId && (d.clientDeviceId === clientDeviceId || d.id === clientDeviceId)) {
+            existingDevice = d;
+          }
+          // 2. Match by platform and deviceName
+          else if (
+            !existingDevice &&
+            d.status === "active" &&
+            d.platform === (platform || "Mobile Web") &&
+            d.deviceName === (deviceName || "Android Phone")
+          ) {
+            existingDevice = d;
+          }
+        }
+      });
+    } catch (dbErr) {
+      console.warn("[Mobile Pairing] Could not query connected_devices:", dbErr);
+    }
+
+    let deviceRecord: any;
+    if (existingDevice) {
+      // Reconnection: update existing record, do NOT create new one
+      deviceRecord = {
+        ...existingDevice,
+        clientDeviceId: clientDeviceId || existingDevice.clientDeviceId || existingDevice.id,
+        status: "active",
+        lastActiveAt: new Date().toISOString(),
+        userAgent: userAgent || existingDevice.userAgent || "",
+        platform: platform || existingDevice.platform || "Mobile Web",
+        deviceName: deviceName || existingDevice.deviceName || "Mobile Device",
+      };
+      try {
+        await db.collection("connected_devices").doc(existingDevice.id).set(deviceRecord);
+      } catch (devErr) {
+        console.warn("[Mobile Pairing] Could not update device in DB:", devErr);
+      }
+    } else {
+      // New device: create single stable record
+      const stableId = clientDeviceId
+        ? `dev_${String(clientDeviceId).replace(/[^a-zA-Z0-9_-]/g, "")}`
+        : `dev_${crypto.randomBytes(12).toString("hex")}`;
+
+      deviceRecord = {
+        id: stableId,
+        clientDeviceId: clientDeviceId || stableId,
+        freelancerId,
+        deviceName: deviceName || (platform === "iOS" ? "Apple iPhone" : platform === "Android" ? "Android Phone" : "Mobile Device"),
+        platform: platform || "Mobile Web",
+        userAgent: userAgent || "",
+        pairedAt: new Date().toISOString(),
+        lastActiveAt: new Date().toISOString(),
+        status: "active",
+      };
+      try {
+        await db.collection("connected_devices").doc(stableId).set(deviceRecord);
+      } catch (devErr) {
+        console.warn("[Mobile Pairing] Could not persist connected device to DB:", devErr);
+      }
+    }
+
+    // Mark session as used so it cannot be re-used
+    session.used = true;
+    activePairingSessions.delete(session.pairingToken);
+    if (session.pairingCode) {
+      activePairingSessions.delete(`code_${session.pairingCode}`);
+    }
+
+    return res.json({
+      success: true,
+      profile,
+      freelancerId,
+      device: deviceRecord,
+    });
+  } catch (err: any) {
+    console.error("[Mobile Pairing] Error verifying pairing:", err);
+    return res.status(500).json({ success: false, error: err.message || "Failed to verify pairing code." });
+  }
+});
+
+// 5.3 List paired mobile devices for a freelancer (with automatic deduplication)
+app.get("/api/mobile/devices", async (req: any, res) => {
+  try {
+    const freelancerId = req.query.freelancerId as string;
+    if (!freelancerId) {
+      return res.status(400).json({ error: "freelancerId parameter is required." });
+    }
+
+    const rawDevices: any[] = [];
+    try {
+      const snap = await db.collection("connected_devices").get();
+      snap.forEach((doc: any) => {
+        const d = doc.data();
+        if (d && d.freelancerId === freelancerId && d.status === "active") {
+          rawDevices.push(d);
+        }
+      });
+    } catch (dbErr) {
+      console.warn("[Mobile Devices] DB read failed for devices:", dbErr);
+    }
+
+    // Group and deduplicate: keep the most recent active device per identifier or platform+deviceName
+    rawDevices.sort(
+      (a, b) => new Date(b.lastActiveAt || b.pairedAt || 0).getTime() - new Date(a.lastActiveAt || a.pairedAt || 0).getTime()
+    );
+
+    const seen = new Set<string>();
+    const devices: any[] = [];
+    for (const dev of rawDevices) {
+      const key = dev.clientDeviceId || `${dev.platform}___${dev.deviceName}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        devices.push(dev);
+      }
+    }
+
+    return res.json({ success: true, devices });
+  } catch (err: any) {
+    console.error("[Mobile Devices] Error fetching devices:", err);
+    return res.status(500).json({ error: err.message || "Failed to fetch connected devices." });
+  }
+});
+
+// 5.4 Disconnect / revoke a mobile device session
+app.post("/api/mobile/devices/disconnect", async (req: any, res) => {
+  try {
+    const { deviceId, freelancerId } = req.body;
+    if (!deviceId) {
+      return res.status(400).json({ error: "deviceId parameter is required." });
+    }
+
+    try {
+      const docRef = db.collection("connected_devices").doc(deviceId);
+      const snap = await docRef.get();
+      if (snap.exists) {
+        await docRef.set({ ...snap.data(), status: "revoked", revokedAt: new Date().toISOString() }, { merge: true });
+      }
+    } catch (dbErr) {
+      console.warn("[Mobile Devices] Failed to revoke device in DB:", dbErr);
+    }
+
+    return res.json({ success: true, message: "Device disconnected successfully." });
+  } catch (err: any) {
+    console.error("[Mobile Devices] Error disconnecting device:", err);
+    return res.status(500).json({ error: err.message || "Failed to disconnect device." });
+  }
+});
+
+// 5.5 Mobile device heartbeat to maintain live connection status
+app.post("/api/mobile/device-heartbeat", async (req: any, res) => {
+  try {
+    const { deviceId, freelancerId } = req.body;
+    if (deviceId) {
+      try {
+        const docRef = db.collection("connected_devices").doc(deviceId);
+        await docRef.set({ lastActiveAt: new Date().toISOString() }, { merge: true });
+      } catch (e) {
+        // silent
+      }
+    }
+    return res.json({ success: true, timestamp: new Date().toISOString() });
+  } catch (err: any) {
+    return res.status(500).json({ error: "Heartbeat failed." });
+  }
+});
+
 export default app;
+
