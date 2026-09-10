@@ -31,6 +31,7 @@ interface MobileConnectModalProps {
   cloudSyncStatus: "synced" | "syncing" | "offline" | "error";
   onTriggerSync: () => Promise<void>;
   onConnectWithCode?: (code: string) => Promise<boolean>;
+  collections?: any;
 }
 
 export const MobileConnectModal: React.FC<MobileConnectModalProps> = ({
@@ -40,6 +41,7 @@ export const MobileConnectModal: React.FC<MobileConnectModalProps> = ({
   cloudSyncStatus,
   onTriggerSync,
   onConnectWithCode,
+  collections,
 }) => {
   const [activeTab, setActiveTab] = useState<"connect" | "devices" | "enter_code">("connect");
   const [pairingCode, setPairingCode] = useState<string>("");
@@ -49,6 +51,7 @@ export const MobileConnectModal: React.FC<MobileConnectModalProps> = ({
   const [isLoadingCode, setIsLoadingCode] = useState<boolean>(false);
   const [copiedCode, setCopiedCode] = useState<boolean>(false);
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
+  const [copiedAccountId, setCopiedAccountId] = useState<boolean>(false);
   const [secondsRemaining, setSecondsRemaining] = useState<number>(600);
   const [devices, setDevices] = useState<ConnectedDevice[]>([]);
   const [isLoadingDevices, setIsLoadingDevices] = useState<boolean>(false);
@@ -74,6 +77,7 @@ export const MobileConnectModal: React.FC<MobileConnectModalProps> = ({
         body: JSON.stringify({
           freelancerId: profile.id,
           profile,
+          collections,
         }),
       });
 
@@ -177,6 +181,17 @@ export const MobileConnectModal: React.FC<MobileConnectModalProps> = ({
     }
   };
 
+  const handleCopyAccountId = async () => {
+    if (!profile?.id) return;
+    try {
+      await navigator.clipboard.writeText(profile.id);
+      setCopiedAccountId(true);
+      setTimeout(() => setCopiedAccountId(false), 2000);
+    } catch (e) {
+      console.warn("Clipboard write failed:", e);
+    }
+  };
+
   const handleDisconnectDevice = async (deviceId: string) => {
     if (!confirm("Disconnect this mobile device? This removes the session without deleting any CRM data.")) {
       return;
@@ -214,7 +229,8 @@ export const MobileConnectModal: React.FC<MobileConnectModalProps> = ({
 
   const handleVerifyInputCode = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputCode.trim()) return;
+    const rawInput = inputCode.trim();
+    if (!rawInput) return;
 
     setIsVerifyingInputCode(true);
     setInputCodeError("");
@@ -222,26 +238,42 @@ export const MobileConnectModal: React.FC<MobileConnectModalProps> = ({
 
     try {
       if (onConnectWithCode) {
-        const ok = await onConnectWithCode(inputCode.trim());
+        const ok = await onConnectWithCode(rawInput);
         if (ok) {
           setInputCodeSuccess(true);
           setTimeout(() => {
             onClose();
           }, 1500);
         } else {
-          setInputCodeError("Invalid or expired connection code. Please check your desktop screen.");
+          setInputCodeError("Invalid or expired connection code or Account ID. Please check your desktop screen.");
         }
       } else {
-        const res = await fetch("/api/mobile/verify-pairing", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            pairingCode: inputCode.trim(),
-            clientDeviceId: getOrCreatePersistentDeviceId(),
-            deviceName: "Mobile Web Device",
-            platform: "Mobile Web",
-          }),
-        });
+        const cleanNumeric = rawInput.replace(/\D/g, "");
+        const is6Digit = cleanNumeric.length === 6;
+        let res: Response;
+        if (is6Digit) {
+          res = await fetch("/api/mobile/verify-pairing", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              pairingCode: cleanNumeric,
+              clientDeviceId: getOrCreatePersistentDeviceId(),
+              deviceName: "Mobile Web Device",
+              platform: "Mobile Web",
+            }),
+          });
+        } else {
+          res = await fetch("/api/workspace/connect-by-id", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              workspaceId: rawInput,
+              clientDeviceId: getOrCreatePersistentDeviceId(),
+              deviceName: "Mobile Web Device",
+              platform: "Mobile Web",
+            }),
+          });
+        }
         const data = await res.json();
         if (data.success && data.profile) {
           localStorage.setItem("crm_profile", JSON.stringify(data.profile));
@@ -250,7 +282,7 @@ export const MobileConnectModal: React.FC<MobileConnectModalProps> = ({
             window.location.href = "/";
           }, 1000);
         } else {
-          setInputCodeError(data.error || "Invalid code. Please try again.");
+          setInputCodeError(data.message || data.error || "Invalid code or Workspace ID. Please try again.");
         }
       }
     } catch (err: any) {
@@ -475,6 +507,26 @@ export const MobileConnectModal: React.FC<MobileConnectModalProps> = ({
 
               {/* Direct Deep Link & Security Note */}
               <div className="p-4 rounded-2xl bg-white border border-slate-200/80 space-y-3">
+                <div className="flex items-center justify-between gap-2 p-2.5 bg-slate-50 rounded-xl border border-slate-200/60">
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">
+                      Workspace Account ID
+                    </span>
+                    <span className="font-mono text-xs font-bold text-slate-800">
+                      {profile.id}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCopyAccountId}
+                    className="px-2.5 py-1 text-xs font-semibold text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                    title="Copy Account ID"
+                  >
+                    {copiedAccountId ? <Check size={13} className="text-emerald-600" /> : <Copy size={13} />}
+                    <span>{copiedAccountId ? "Copied!" : "Copy ID"}</span>
+                  </button>
+                </div>
+
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs font-bold text-slate-800">Connection Deep-Link:</span>
                   <div className="flex items-center gap-2">
@@ -606,27 +658,26 @@ export const MobileConnectModal: React.FC<MobileConnectModalProps> = ({
             </div>
           )}
 
-          {/* TAB 3: Enter Code (For connecting this client to another workspace) */}
+          {/* TAB 3: Enter Code or Account ID (For connecting this client to another workspace) */}
           {activeTab === "enter_code" && (
             <form onSubmit={handleVerifyInputCode} className="space-y-4">
               <div className="p-4 rounded-2xl bg-indigo-50/50 border border-indigo-100 text-xs text-indigo-900">
                 <p className="font-bold">Connect this device to an existing Freelancer CRM account</p>
                 <p className="text-indigo-700 mt-0.5">
-                  Enter the 6-digit connection code displayed on your desktop screen:
+                  Enter the 6-digit connection code or Account ID (e.g. 54395c83) displayed on your desktop screen:
                 </p>
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  6-Digit Connection Code
+                  6-Digit Code or Account ID
                 </label>
                 <input
                   type="text"
-                  maxLength={7}
-                  placeholder="e.g. 839 201"
+                  placeholder="e.g. 839 201 or 54395c83"
                   value={inputCode}
                   onChange={(e) => setInputCode(e.target.value)}
-                  className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl font-mono text-lg font-bold tracking-widest text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-center"
+                  className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl font-mono text-base font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-center"
                   required
                 />
               </div>

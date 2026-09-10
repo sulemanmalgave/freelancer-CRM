@@ -1,11 +1,12 @@
 export interface FreelancerProfile {
   id: string;
   name: string;
+  email?: string;
   businessName: string;
   currency: string;
   country: string;
   billingCountry?: string;
-  plan: "Free" | "Pro" | "Monthly" | "3 Months" | string;
+  plan: "Free" | "Pro" | "Monthly" | "Annual" | "3 Months" | string;
   onboardingCompleted: boolean;
   createdAt: string;
   subscriptionStatus?: "active" | "cancelled" | "inactive";

@@ -177,7 +177,9 @@ function NotesRecordsView({
     profile.premium === true ||
     profile.plan === "Pro" ||
     profile.plan === "Monthly" ||
-    profile.plan === "3 Months";
+    profile.plan === "Annual" ||
+    profile.plan === "3 Months" ||
+    (profile.plan !== undefined && profile.plan !== "Free");
 
   // Pro Upgrade Prompt state: "notes" | "voice" | "records" | null
   const [proPromptType, setProPromptType] = useState<"notes" | "voice" | "records" | null>(null);

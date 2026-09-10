@@ -205,14 +205,35 @@
   },
   "freelancers": {
     "54395c83-8a90-4a6a-bd2f-ac95c8ea2052": {
+      "subscriptionRenewsAt": "",
+      "gmailName": "Suleman Malgave",
+      "subscriptionStatus": "cancelled",
+      "currency": "INR",
+      "onboardingCompleted": true,
+      "gmailConnectedAt": "2026-09-03T04:16:50.864Z",
+      "gmailPicture": "https://lh3.googleusercontent.com/a/ACg8ocIivmp4w3x-brchjHigAhSFV6bbIcG-RhLHXbjZKtm4nEmY0Cs=s96-c",
+      "gmailConnected": true,
+      "gmailEmail": "sulemanmalgave1@gmail.com",
+      "createdAt": "2026-06-25T11:37:00.919Z",
+      "subscriptionRegion": "IN",
+      "billingCountry": "IN",
+      "name": "suleman malgave",
       "id": "54395c83-8a90-4a6a-bd2f-ac95c8ea2052",
-      "name": "Freelancer Test",
-      "businessName": "Test Studio",
-      "email": "test@example.com",
-      "onboardingCompleted": true
+      "country": "IN",
+      "businessName": "malgave solutions",
+      "plan": "Free",
+      "subscriptionMethod": "UPI (Restored)"
     }
   },
   "config": {
+    "paypal_live_v5": {
+      "paypalPlanMonthly": "P-6RD14298RG806814XNKQSIGA",
+      "paypalPlanAnnual": "P-7SD54045WY3221612NKQSIGA",
+      "paypalPlanQuarterly": "P-7SD54045WY3221612NKQSIGA",
+      "productId": "PROD-243265147V606044E",
+      "environment": "live",
+      "createdAt": "2026-09-09T02:00:00.000Z"
+    },
     "paypal_live_v4": {
       "paypalPlanMonthly": "P-57E77177FW5061919NKMPJ4Y",
       "paypalPlanQuarterly": "P-87K99586V2123033WNKMPJ5A",
@@ -220,5 +241,92 @@
       "environment": "live",
       "createdAt": "2026-09-03T04:17:57.015Z"
     }
-  }
+  },
+  "clients": {
+    "dd2716bf-7ddb-45be-8cfd-de074244f086": {
+      "companyName": "suleman",
+      "contactPerson": "ghjk",
+      "email": "malgavesuleman85@gmail.com",
+      "phone": "",
+      "notes": "",
+      "status": "Active",
+      "importantLinks": [],
+      "id": "dd2716bf-7ddb-45be-8cfd-de074244f086",
+      "freelancerId": "54395c83-8a90-4a6a-bd2f-ac95c8ea2052",
+      "createdAt": "2026-09-02T09:55:23.148Z",
+      "updatedAt": "2026-09-02T09:55:23.148Z"
+    }
+  },
+  "tasks": {
+    "555f2108-0bcb-428b-8b21-7b54e7344b6a": {
+      "title": "wertyu",
+      "dueDate": "2026-09-04",
+      "priority": "Medium",
+      "completed": false,
+      "id": "555f2108-0bcb-428b-8b21-7b54e7344b6a",
+      "freelancerId": "54395c83-8a90-4a6a-bd2f-ac95c8ea2052",
+      "createdAt": "2026-09-02T09:48:18.267Z",
+      "updatedAt": "2026-09-02T09:48:18.267Z"
+    }
+  },
+  "invoices": {
+    "7d74e141-31b2-4f54-9cd3-7658f0510763": {
+      "clientId": "dd2716bf-7ddb-45be-8cfd-de074244f086",
+      "issueDate": "2026-09-02",
+      "dueDate": "2026-09-16",
+      "services": [
+        {
+          "description": "sdfg",
+          "quantity": 1,
+          "rate": 400
+        }
+      ],
+      "taxRate": 0,
+      "notes": "Thank you for your business!",
+      "status": "Sent",
+      "id": "7d74e141-31b2-4f54-9cd3-7658f0510763",
+      "freelancerId": "54395c83-8a90-4a6a-bd2f-ac95c8ea2052",
+      "invoiceNumber": "INV-001",
+      "createdAt": "2026-09-02T09:56:05.910Z",
+      "updatedAt": "2026-09-02T09:56:05.910Z"
+    }
+  },
+  "proposals": {
+    "f48f47da-017b-449b-8b2f-815b0ce10a38": {
+      "id": "f48f47da-017b-449b-8b2f-815b0ce10a38",
+      "freelancerId": "54395c83-8a90-4a6a-bd2f-ac95c8ea2052",
+      "proposalNumber": "PROP-001",
+      "clientId": "dd2716bf-7ddb-45be-8cfd-de074244f086",
+      "title": "Project Scope & Quotation",
+      "description": "Comprehensive scope of deliverables, milestones, and project execution roadmap.",
+      "issueDate": "2026-09-02",
+      "validUntil": "2026-09-16",
+      "items": [
+        {
+          "description": "Core Deliverable / Scope of Work",
+          "quantity": 1,
+          "rate": 1500
+        }
+      ],
+      "discountRate": 0,
+      "taxRate": 0,
+      "notes": "Thank you for considering our proposal. We are eager to partner with you and achieve outstanding outcomes!",
+      "terms": "Payment terms: 50% upfront deposit before project kickoff, 50% upon final sign-off. Quote valid for 14 days.",
+      "status": "Draft",
+      "createdAt": "2026-09-02T10:43:54.293Z",
+      "updatedAt": "2026-09-02T10:43:54.293Z"
+    }
+  },
+  "workspace_meta": {
+    "54395c83-8a90-4a6a-bd2f-ac95c8ea2052": {
+      "freelancerId": "54395c83-8a90-4a6a-bd2f-ac95c8ea2052",
+      "version": 2,
+      "lastModified": "2026-09-09T09:04:20.036Z"
+    }
+  },
+  "projects": {},
+  "records": {},
+  "followups": {},
+  "leads": {},
+  "documents": {}
 }

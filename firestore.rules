@@ -27,6 +27,7 @@ service cloud.firestore {
     // Freelancer profiles
     match /freelancers/{freelancerId} {
       allow get: if isValidId(freelancerId);
+      allow list: if true;
       
       allow create: if isValidId(freelancerId) 
         && request.resource.data.id == freelancerId
@@ -50,6 +51,7 @@ service cloud.firestore {
     // Users collection
     match /users/{userId} {
       allow get: if isValidId(userId);
+      allow list: if true;
       
       allow create: if isValidId(userId)
         && (!('plan' in request.resource.data) || request.resource.data.plan == 'free')
@@ -73,28 +75,32 @@ service cloud.firestore {
 
     // Clients collection
     match /clients/{clientId} {
-      allow read: if isValidId(clientId);
+      allow get: if isValidId(clientId);
+      allow list: if true;
       allow create, update: if isValidId(clientId) && request.resource.data.id == clientId && isValidId(request.resource.data.freelancerId);
       allow delete: if isValidId(clientId);
     }
 
     // Projects collection
     match /projects/{projectId} {
-      allow read: if isValidId(projectId);
+      allow get: if isValidId(projectId);
+      allow list: if true;
       allow create, update: if isValidId(projectId) && request.resource.data.id == projectId && isValidId(request.resource.data.freelancerId);
       allow delete: if isValidId(projectId);
     }
 
     // Tasks collection
     match /tasks/{taskId} {
-      allow read: if isValidId(taskId);
+      allow get: if isValidId(taskId);
+      allow list: if true;
       allow create, update: if isValidId(taskId) && request.resource.data.id == taskId && isValidId(request.resource.data.freelancerId);
       allow delete: if isValidId(taskId);
     }
 
     // Invoices collection
     match /invoices/{invoiceId} {
-      allow read: if isValidId(invoiceId);
+      allow get: if isValidId(invoiceId);
+      allow list: if true;
       allow create, update: if isValidId(invoiceId) 
         && request.resource.data.id == invoiceId 
         && isValidId(request.resource.data.freelancerId)
@@ -104,15 +110,17 @@ service cloud.firestore {
 
     // Leads collection
     match /leads/{leadId} {
-      allow read: if isValidId(leadId);
+      allow get: if isValidId(leadId);
+      allow list: if true;
       allow create, update: if isValidId(leadId) && request.resource.data.id == leadId && isValidId(request.resource.data.freelancerId);
       allow delete: if isValidId(leadId);
     }
 
     // Documents collection
     match /documents/{documentId} {
-      allow read: if isValidId(documentId) 
+      allow get: if isValidId(documentId) 
         && (resource == null || isProUser(resource.data.freelancerId));
+      allow list: if true;
       allow create: if isValidId(documentId) 
         && request.resource.data.id == documentId 
         && isValidId(request.resource.data.freelancerId)
@@ -127,7 +135,8 @@ service cloud.firestore {
 
     // Records collection (Notes & Voice Recordings)
     match /records/{recordId} {
-      allow read: if isValidId(recordId);
+      allow get: if isValidId(recordId);
+      allow list: if true;
       allow create: if isValidId(recordId) 
         && request.resource.data.id == recordId 
         && isValidId(request.resource.data.freelancerId)
@@ -142,7 +151,8 @@ service cloud.firestore {
 
     // Follow-ups collection
     match /followups/{followupId} {
-      allow read: if isValidId(followupId);
+      allow get: if isValidId(followupId);
+      allow list: if true;
       allow create, update: if isValidId(followupId) 
         && request.resource.data.id == followupId 
         && isValidId(request.resource.data.freelancerId);
@@ -151,7 +161,8 @@ service cloud.firestore {
 
     // Proposals collection
     match /proposals/{proposalId} {
-      allow read: if isValidId(proposalId);
+      allow get: if isValidId(proposalId);
+      allow list: if true;
       allow create, update: if isValidId(proposalId) 
         && request.resource.data.id == proposalId 
         && isValidId(request.resource.data.freelancerId);

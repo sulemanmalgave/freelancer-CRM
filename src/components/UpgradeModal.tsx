@@ -66,7 +66,7 @@ export default function UpgradeModal({
   triggerReason,
 }: UpgradeModalProps) {
   const [purchaseStage, setPurchaseStage] = useState<"plans" | "processing" | "success" | "failed">("plans");
-  const [selectedPlan, setSelectedPlan] = useState<"Monthly" | "3 Months">("Monthly");
+  const [selectedPlan, setSelectedPlan] = useState<"Monthly" | "Annual">("Monthly");
   
   // Manual Country Selection
   const { country } = detectLocale();
@@ -84,7 +84,7 @@ export default function UpgradeModal({
     razorpayConfigured: boolean;
     paypalConfigured: boolean;
     paypalPlanMonthly: string;
-    paypalPlanQuarterly: string;
+    paypalPlanAnnual?: string;
   } | null>(null);
 
   const [isLoadingConfig, setIsLoadingConfig] = useState(false);
@@ -107,15 +107,19 @@ export default function UpgradeModal({
       amount: isIndia ? 199 : 2.99,
       currencySymbol: isIndia ? "₹" : "$",
       currencyCode: isIndia ? "INR" : "USD",
-      label: "Monthly Pro Access",
+      label: isIndia ? "Monthly Pro Access (₹199/month)" : "Monthly Pro Access ($2.99/month)",
+      periodLabel: "month",
+      billingCycle: "Billed monthly",
       savingLabel: null,
     },
-    "3 Months": {
-      amount: isIndia ? 399 : 7.99,
+    "Annual": {
+      amount: isIndia ? 399 : 19.99,
       currencySymbol: isIndia ? "₹" : "$",
       currencyCode: isIndia ? "INR" : "USD",
-      label: "3 Months Pro Saver",
-      savingLabel: isIndia ? "Save 33% compared to monthly" : "Save 11% compared to monthly",
+      label: isIndia ? "Annual Pro Access (₹399/year)" : "Annual Pro Access ($19.99/year)",
+      periodLabel: "year",
+      billingCycle: "Yearly subscription (billed annually)",
+      savingLabel: isIndia ? "Save 83% vs monthly (~₹33/mo)" : "Save 44% vs monthly (~$1.66/mo)",
     }
   };
 
@@ -400,8 +404,8 @@ export default function UpgradeModal({
             },
             createSubscription: (data: any, actions: any) => {
               setPaymentError("");
-              const targetPlanId = selectedPlan === "3 Months" 
-                ? paymentConfig.paypalPlanQuarterly 
+              const targetPlanId = selectedPlan === "Annual" 
+                ? paymentConfig.paypalPlanAnnual 
                 : paymentConfig.paypalPlanMonthly;
               
               if (!targetPlanId || targetPlanId.trim() === "" || targetPlanId === "undefined" || targetPlanId.startsWith("P-3023") || targetPlanId.startsWith("P-5919")) {
@@ -411,7 +415,7 @@ export default function UpgradeModal({
                 return Promise.reject(new Error(errMsg));
               }
 
-              const customId = `${profile.id}:${selectedPlan === "3 Months" ? "quarterly" : "monthly"}`;
+              const customId = `${profile.id}:${selectedPlan === "Annual" ? "annual" : "monthly"}`;
               console.log(`[PayPal SDK] Initiating subscription. Plan ID: ${targetPlanId}, Custom ID: ${customId}`);
               
               return actions.subscription.create({
@@ -438,7 +442,7 @@ export default function UpgradeModal({
 
               const pendingPayPal = {
                 type: "paypal",
-                planId: selectedPlan === "3 Months" ? "quarterly" : "monthly",
+                planId: selectedPlan === "Annual" ? "annual" : "monthly",
                 subscriptionId: data.subscriptionID,
                 freelancerId: profile.id,
               };
@@ -454,7 +458,7 @@ export default function UpgradeModal({
                     ...authHeader
                   },
                   body: JSON.stringify({
-                    planId: selectedPlan === "3 Months" ? "quarterly" : "monthly",
+                    planId: selectedPlan === "Annual" ? "annual" : "monthly",
                     subscriptionId: data.subscriptionID,
                     freelancerId: profile.id,
                   }),
@@ -764,8 +768,8 @@ export default function UpgradeModal({
 
   const isConfigured = isIndia ? paymentConfig?.razorpayConfigured : paymentConfig?.paypalConfigured;
 
-  const activePlanId = selectedPlan === "3 Months" 
-    ? paymentConfig?.paypalPlanQuarterly 
+  const activePlanId = selectedPlan === "Annual" 
+    ? paymentConfig?.paypalPlanAnnual 
     : paymentConfig?.paypalPlanMonthly;
   
   const isPlanValid = activePlanId && activePlanId.trim() !== "" && activePlanId !== "undefined" && !activePlanId.startsWith("P-3023") && !activePlanId.startsWith("P-5919");
@@ -1041,30 +1045,32 @@ export default function UpgradeModal({
                           <strong className="text-xl font-black text-slate-900">
                             {isIndia ? "₹199" : "$2.99"}
                           </strong>
-                          <span className="text-[10px] text-slate-400">/mo</span>
+                          <span className="text-[10px] text-slate-400">/month</span>
                         </div>
-                        <span className="text-[9px] text-slate-450 mt-1">Flexible subscription</span>
+                        <span className="text-[9px] text-slate-500 font-medium mt-0.5">Billed monthly</span>
+                        <span className="text-[8px] text-slate-400">Flexible cancellation</span>
                       </button>
 
                       <button
                         type="button"
-                        onClick={() => setSelectedPlan("3 Months")}
+                        onClick={() => setSelectedPlan("Annual")}
                         className={`p-3.5 rounded-2xl border text-center transition-all flex flex-col justify-center items-center relative ${
-                          selectedPlan === "3 Months"
+                          selectedPlan === "Annual"
                             ? "border-indigo-600 bg-indigo-50/20 shadow-md shadow-indigo-600/5"
                             : "border-slate-200 bg-white hover:bg-slate-50"
                         }`}
                       >
-                        <span className="absolute -top-2 px-2 py-0.5 bg-indigo-600 text-white text-[8px] font-black uppercase rounded-full">Saver Pack</span>
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">3 Months</span>
+                        <span className="absolute -top-2 px-2 py-0.5 bg-indigo-600 text-white text-[8px] font-black uppercase rounded-full">Best Value</span>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Annual Plan</span>
                         <div className="flex items-baseline gap-0.5">
                           <strong className="text-xl font-black text-slate-900">
-                            {isIndia ? "₹399" : "$7.99"}
+                            {isIndia ? "₹399" : "$19.99"}
                           </strong>
-                          <span className="text-[10px] text-slate-400">/total</span>
+                          <span className="text-[10px] text-slate-400">/year</span>
                         </div>
-                        <span className="text-[8px] text-emerald-600 font-extrabold mt-1">
-                          {isIndia ? "Save 33% (~₹133/mo)" : "Save 11% (~$2.66/mo)"}
+                        <span className="text-[9px] text-indigo-700 font-bold mt-0.5">Yearly subscription</span>
+                        <span className="text-[8px] text-emerald-600 font-extrabold">
+                          {isIndia ? "Save 83% (~₹33/mo)" : "Save 44% (~$1.66/mo)"}
                         </span>
                       </button>
                     </div>
@@ -1272,7 +1278,7 @@ export default function UpgradeModal({
                 <div className="flex justify-between">
                   <span className="text-slate-400">Entitlement Period</span>
                   <span className="font-semibold text-emerald-600">
-                    Active for {selectedPlan === "Monthly" ? "1 Month" : "3 Months"}
+                    Active for {selectedPlan === "Monthly" ? "1 Month" : "1 Year (Yearly)"}
                   </span>
                 </div>
               </div>

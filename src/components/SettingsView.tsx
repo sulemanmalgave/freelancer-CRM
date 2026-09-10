@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { User, Landmark, Coins, ShieldCheck, Sun, Award, Sparkles, RefreshCw, Laptop, Download, Mail, Smartphone } from "lucide-react";
+import { User, Landmark, Coins, ShieldCheck, Sun, Award, Sparkles, RefreshCw, Laptop, Download, Mail, Smartphone, LogOut, KeyRound } from "lucide-react";
 import { FreelancerProfile } from "../types";
 import { db } from "../firebase";
 import { doc, getDoc } from "firebase/firestore";
@@ -14,6 +14,7 @@ interface SettingsViewProps {
   onNavigate?: (view: string) => void;
   onOpenExport?: () => void;
   onOpenMobileModal?: () => void;
+  onLogout?: () => void;
 }
 
 export default function SettingsView({
@@ -25,6 +26,7 @@ export default function SettingsView({
   onNavigate,
   onOpenExport,
   onOpenMobileModal,
+  onLogout,
 }: SettingsViewProps) {
   const [name, setName] = useState(profile?.name || "");
   const [businessName, setBusinessName] = useState(profile?.businessName || "");
@@ -213,7 +215,7 @@ export default function SettingsView({
                 </div>
                 <div className="text-[10px] text-slate-500 space-y-1">
                   <div>Method: <strong className="text-slate-700">{profile.subscriptionMethod || "Direct Gateway"}</strong></div>
-                  <div>Region: <strong className="text-slate-700">{profile.subscriptionRegion === "IN" ? "India (₹99/mo)" : "International ($2.99/mo)"}</strong></div>
+                  <div>Region: <strong className="text-slate-700">{profile.subscriptionRegion === "IN" ? "India (₹199/mo · ₹399/yr)" : "International ($2.99/mo · $19.99/yr)"}</strong></div>
                 </div>
                 <button
                   onClick={() => onTriggerUpgrade("settings_upgrade")}
@@ -344,6 +346,54 @@ export default function SettingsView({
               >
                 <Download size={12} />
                 <span>Export & Backup Workspace</span>
+              </button>
+            )}
+          </div>
+
+          {/* Account & Authentication Section */}
+          <div className="p-5 glass-panel rounded-2xl text-xs space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-indigo-50 border border-indigo-100 rounded-lg text-indigo-600">
+                  <KeyRound className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-xs uppercase tracking-widest text-slate-800">Account & Security</h3>
+                  <p className="text-[9px] text-slate-400">Authenticated Session</p>
+                </div>
+              </div>
+              <span className="text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                <ShieldCheck size={11} />
+                <span>Protected</span>
+              </span>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3 space-y-1.5">
+              <div className="flex items-center justify-between text-slate-700">
+                <span className="text-[11px] text-slate-500">Account Name:</span>
+                <span className="text-[11px] font-bold text-slate-800">{profile.name}</span>
+              </div>
+              {profile.email && (
+                <div className="flex items-center justify-between text-slate-700">
+                  <span className="text-[11px] text-slate-500">Email Address:</span>
+                  <span className="text-[11px] font-mono text-slate-700 truncate max-w-[180px]">{profile.email}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between text-slate-700">
+                <span className="text-[11px] text-slate-500">Encryption:</span>
+                <span className="text-[11px] text-slate-600 font-mono">scrypt hashing</span>
+              </div>
+            </div>
+
+            {onLogout && (
+              <button
+                type="button"
+                id="settings-logout-btn"
+                onClick={onLogout}
+                className="w-full py-2 bg-red-50 hover:bg-red-100 text-red-600 hover:text-red-700 border border-red-200 rounded-lg text-[10px] font-bold text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <LogOut size={12} />
+                <span>Log Out of Workspace</span>
               </button>
             )}
           </div>

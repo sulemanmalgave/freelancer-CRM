@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, lazy, Suspense } from "react";
+import React, { useState, useEffect, useCallback, useRef, lazy, Suspense } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   LayoutDashboard,
@@ -29,6 +29,7 @@ import {
   Smartphone,
   ChevronRight,
   Lock,
+  LogOut,
 } from "lucide-react";
 
 const logoIcon = "/icon-192.png";
@@ -45,6 +46,7 @@ import { generateUUID, loadAndRecoverCollection, loadAndRecoverProfile, getOrCre
 
 // UI Views
 import Onboarding from "./components/Onboarding";
+import AuthScreen from "./components/AuthScreen";
 import ConnectExistingAccount from "./components/ConnectExistingAccount";
 import UpgradeModal from "./components/UpgradeModal";
 import { MobileConnectModal } from "./components/MobileConnectModal";
@@ -115,7 +117,8 @@ export default function App() {
     return window.location.pathname === "/privacy-policy" ? "PrivacyPolicy" : "Dashboard";
   });
   const [searchTerm, setSearchTerm] = useState("");
-  const [cloudSyncStatus, setCloudSyncStatus] = useState<"syncing" | "synced" | "offline">("synced");
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<"syncing" | "synced" | "offline" | "error">("synced");
+  const lastSeenVersionRef = useRef<number>(1);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isConnectExistingOpen, setIsConnectExistingOpen] = useState<boolean>(() => {
     if (typeof window !== "undefined") {
@@ -221,7 +224,7 @@ export default function App() {
     }
   }, [pwaPrompt]);
 
-  // 1. Initial State Bootstrap from Local Caching with Full Recovery Scanner
+  // 1. Initial State Bootstrap from Local Caching with Full Recovery Scanner & Session Verification
   useEffect(() => {
     try {
       const activeProfile = loadAndRecoverProfile();
@@ -239,103 +242,348 @@ export default function App() {
         setLeads(loadAndRecoverCollection<Lead>("leads", activeProfile.id));
         setDocuments(loadAndRecoverCollection<DocumentRecord>("documents", activeProfile.id));
       }
+
+      // Check active auth session with backend
+      const token = localStorage.getItem("crm_auth_token");
+      if (token) {
+        fetch("/api/auth/me", {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+          .then((r) => r.json())
+          .then((data) => {
+            if (data.success && data.profile) {
+              const merged = { ...data.profile, onboardingCompleted: true };
+              setProfile(merged);
+              localStorage.setItem("crm_profile", JSON.stringify(merged));
+              if (data.collections) {
+                if (data.collections.clients) setClients(data.collections.clients);
+                if (data.collections.records) setRecords(data.collections.records);
+                if (data.collections.projects) setProjects(data.collections.projects);
+                if (data.collections.tasks) setTasks(data.collections.tasks);
+                if (data.collections.followups) setFollowUps(data.collections.followups);
+                if (data.collections.invoices) setInvoices(data.collections.invoices);
+                if (data.collections.proposals) setProposals(data.collections.proposals);
+                if (data.collections.leads) setLeads(data.collections.leads);
+                if (data.collections.documents) setDocuments(data.collections.documents);
+              }
+            } else if (data.error === "invalid_session") {
+              localStorage.removeItem("crm_auth_token");
+            }
+          })
+          .catch(() => {});
+      }
     } catch (e) {
       console.error("Local Storage bootstrap & recovery failed", e);
     }
   }, []);
 
-  // 2. Active Firestore Pull for Cloud Syncing (Non-destructive merge, offline safe)
-  const pullCloudData = useCallback(async () => {
+  // 2. Canonical Cloud Pull & Bidirectional Workspace Sync
+  const pullCloudData = useCallback(async (silent = false) => {
     if (!profile?.id) return;
 
-    setCloudSyncStatus("syncing");
+    if (!silent) setCloudSyncStatus("syncing");
     const freelancerId = profile.id;
+    const deviceId = localStorage.getItem("crm_mobile_device_id") || undefined;
+    const token = localStorage.getItem("crm_auth_token");
+    const reqHeaders: Record<string, string> = {};
+    if (token) {
+      reqHeaders["Authorization"] = `Bearer ${token}`;
+    }
 
     try {
-      // 1. Fetch remote profile (for plan/subscription status)
-      try {
-        const profileSnap = await getDoc(doc(db, "freelancers", freelancerId));
-        if (profileSnap.exists()) {
-          const freshProfile = profileSnap.data() as FreelancerProfile;
-          setProfile((prev) => (prev ? { ...prev, ...freshProfile } : freshProfile));
-          localStorage.setItem("crm_profile", JSON.stringify(freshProfile));
-        }
-      } catch (profileErr) {
-        console.warn("Could not fetch remote profile (retaining local):", profileErr);
+      // 1. Fetch cloud workspace data from backend
+      const res = await fetch(
+        `/api/workspace/data?freelancerId=${encodeURIComponent(freelancerId)}${
+          deviceId ? `&deviceId=${encodeURIComponent(deviceId)}` : ""
+        }`,
+        { headers: reqHeaders }
+      );
+
+      // Handle device revocation
+      if (res.status === 403) {
+        try {
+          const data = await res.json();
+          if (data.error === "device_revoked") {
+            console.warn("[Cloud Sync] Device session was revoked by desktop.");
+            localStorage.removeItem("crm_profile");
+            localStorage.removeItem("crm_mobile_device_id");
+            setProfile(null);
+            setIsConnectExistingOpen(true);
+            return;
+          }
+        } catch {}
       }
 
-      const buildQuery = (col: string) => query(collection(db, col), where("freelancerId", "==", freelancerId));
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          if (data.version) {
+            lastSeenVersionRef.current = data.version;
+          }
 
-      // Helper to merge cloud docs with local list safely (NEVER wipe local data on error or empty remote)
-      const mergeCollectionSafe = async <T extends { id: string; freelancerId: string }>(
-        colName: string,
-        setList: React.Dispatch<React.SetStateAction<T[]>>
-      ) => {
-        try {
-          const snap = await getDocs(buildQuery(colName));
-          const cloudItems = snap.docs.map((d) => d.data() as T);
-
-          setList((prevList) => {
-            const map = new Map<string, T>();
-
-            // 1. Add all cloud items
-            cloudItems.forEach((cItem) => {
-              if (cItem && cItem.id) map.set(cItem.id, cItem);
+          // Update profile if remote has changes (plan / subscription / profile details)
+          if (data.profile) {
+            setProfile((prev) => {
+              const merged = { ...(prev || {}), ...data.profile };
+              localStorage.setItem("crm_profile", JSON.stringify(merged));
+              return merged;
             });
+          }
 
-            // 2. Retain any local items not yet on cloud
-            const unSyncedLocals: T[] = [];
-            prevList.forEach((localItem) => {
-              if (localItem && localItem.id) {
-                if (!map.has(localItem.id)) {
-                  map.set(localItem.id, localItem);
-                  unSyncedLocals.push(localItem);
+          // Reconcile collections safely using timestamps
+          if (data.collections) {
+            const reconcileCol = <T extends { id: string; freelancerId: string; updatedAt?: string; createdAt?: string }>(
+              colName: string,
+              remoteItems: T[],
+              setList: React.Dispatch<React.SetStateAction<T[]>>
+            ) => {
+              setList((prevLocal) => {
+                const map = new Map<string, T>();
+                (remoteItems || []).forEach((item) => {
+                  if (item && item.id) map.set(item.id, item);
+                });
+
+                const toPushBack: T[] = [];
+                (prevLocal || []).forEach((localItem) => {
+                  if (!localItem || !localItem.id) return;
+                  const remote = map.get(localItem.id);
+                  if (!remote) {
+                    map.set(localItem.id, localItem);
+                    toPushBack.push(localItem);
+                  } else {
+                    const localTime = new Date(localItem.updatedAt || localItem.createdAt || 0).getTime();
+                    const remoteTime = new Date(remote.updatedAt || remote.createdAt || 0).getTime();
+                    if (localTime > remoteTime) {
+                      map.set(localItem.id, localItem);
+                      toPushBack.push(localItem);
+                    }
+                  }
+                });
+
+                const merged = Array.from(map.values());
+                localStorage.setItem(`crm_${colName}_${freelancerId}`, JSON.stringify(merged));
+
+                if (toPushBack.length > 0) {
+                  toPushBack.forEach((item) => {
+                    fetch("/api/workspace/entity", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        freelancerId,
+                        collectionName: colName,
+                        operation: "set",
+                        item,
+                        deviceId,
+                      }),
+                    }).catch(() => {});
+                  });
                 }
-              }
-            });
 
-            const merged = Array.from(map.values());
-            localStorage.setItem(`crm_${colName}_${freelancerId}`, JSON.stringify(merged));
-
-            // 3. Upload any local-only items to cloud in background
-            if (unSyncedLocals.length > 0) {
-              unSyncedLocals.forEach((item) => {
-                setDoc(doc(db, colName, item.id), item).catch((e) =>
-                  console.warn(`Background sync upload failed for ${colName}/${item.id}:`, e)
-                );
+                return merged;
               });
-            }
+            };
 
-            return merged;
-          });
-        } catch (colErr) {
-          console.warn(`Cloud read failed for ${colName}, preserving local data:`, colErr);
+            reconcileCol("clients", data.collections.clients, setClients);
+            reconcileCol("records", data.collections.records, setRecords);
+            reconcileCol("projects", data.collections.projects, setProjects);
+            reconcileCol("tasks", data.collections.tasks, setTasks);
+            reconcileCol("followups", data.collections.followups, setFollowUps);
+            reconcileCol("invoices", data.collections.invoices, setInvoices);
+            reconcileCol("proposals", data.collections.proposals, setProposals);
+            reconcileCol("leads", data.collections.leads, setLeads);
+            reconcileCol("documents", data.collections.documents, setDocuments);
+          }
+
+          setCloudSyncStatus("synced");
+          return;
         }
-      };
+      }
 
-      await Promise.allSettled([
-        mergeCollectionSafe("clients", setClients),
-        mergeCollectionSafe("records", setRecords),
-        mergeCollectionSafe("projects", setProjects),
-        mergeCollectionSafe("tasks", setTasks),
-        mergeCollectionSafe("followups", setFollowUps),
-        mergeCollectionSafe("invoices", setInvoices),
-        mergeCollectionSafe("proposals", setProposals),
-        mergeCollectionSafe("leads", setLeads),
-        mergeCollectionSafe("documents", setDocuments),
-      ]);
-
-      setCloudSyncStatus("synced");
+      if (!navigator.onLine) {
+        setCloudSyncStatus("offline");
+      } else {
+        setCloudSyncStatus("error");
+      }
     } catch (err) {
-      console.warn("Unable to pull cloud sync parameters. Working offline with local data.", err);
-      setCloudSyncStatus("offline");
+      console.warn("Unable to pull cloud sync parameters. Working with local buffer.", err);
+      if (!navigator.onLine) {
+        setCloudSyncStatus("offline");
+      } else {
+        setCloudSyncStatus("error");
+      }
     }
   }, [profile?.id]);
 
+  // Initial bidirectional sync on startup / profile change
   useEffect(() => {
-    if (profile?.id) {
-      pullCloudData();
-    }
+    if (!profile?.id) return;
+    const freelancerId = profile.id;
+    const deviceId = localStorage.getItem("crm_mobile_device_id") || undefined;
+
+    const initialSync = async () => {
+      try {
+        setCloudSyncStatus("syncing");
+        const localClients = loadAndRecoverCollection<Client>("clients", freelancerId);
+        const localRecords = loadAndRecoverCollection<NoteRecord>("records", freelancerId);
+        const localProjects = loadAndRecoverCollection<Project>("projects", freelancerId);
+        const localTasks = loadAndRecoverCollection<Task>("tasks", freelancerId);
+        const localFollowUps = loadAndRecoverCollection<FollowUp>("followups", freelancerId);
+        const localInvoices = loadAndRecoverCollection<Invoice>("invoices", freelancerId);
+        const localProposals = loadAndRecoverCollection<Proposal>("proposals", freelancerId);
+        const localLeads = loadAndRecoverCollection<Lead>("leads", freelancerId);
+        const localDocuments = loadAndRecoverCollection<DocumentRecord>("documents", freelancerId);
+
+        const token = localStorage.getItem("crm_auth_token");
+        const syncHeaders: Record<string, string> = { "Content-Type": "application/json" };
+        if (token) {
+          syncHeaders["Authorization"] = `Bearer ${token}`;
+        }
+
+        const res = await fetch("/api/workspace/sync", {
+          method: "POST",
+          headers: syncHeaders,
+          body: JSON.stringify({
+            freelancerId,
+            deviceId,
+            profile,
+            collections: {
+              clients: localClients,
+              records: localRecords,
+              projects: localProjects,
+              tasks: localTasks,
+              followups: localFollowUps,
+              invoices: localInvoices,
+              proposals: localProposals,
+              leads: localLeads,
+              documents: localDocuments,
+            },
+          }),
+        });
+
+        if (res.status === 403) {
+          const d = await res.json();
+          if (d.error === "device_revoked") {
+            localStorage.removeItem("crm_profile");
+            localStorage.removeItem("crm_mobile_device_id");
+            setProfile(null);
+            setIsConnectExistingOpen(true);
+            return;
+          }
+        }
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.collections) {
+            if (data.version) lastSeenVersionRef.current = data.version;
+            if (data.collections.clients) {
+              setClients(data.collections.clients);
+              localStorage.setItem(`crm_clients_${freelancerId}`, JSON.stringify(data.collections.clients));
+            }
+            if (data.collections.records) {
+              setRecords(data.collections.records);
+              localStorage.setItem(`crm_records_${freelancerId}`, JSON.stringify(data.collections.records));
+            }
+            if (data.collections.projects) {
+              setProjects(data.collections.projects);
+              localStorage.setItem(`crm_projects_${freelancerId}`, JSON.stringify(data.collections.projects));
+            }
+            if (data.collections.tasks) {
+              setTasks(data.collections.tasks);
+              localStorage.setItem(`crm_tasks_${freelancerId}`, JSON.stringify(data.collections.tasks));
+            }
+            if (data.collections.followups) {
+              setFollowUps(data.collections.followups);
+              localStorage.setItem(`crm_followups_${freelancerId}`, JSON.stringify(data.collections.followups));
+            }
+            if (data.collections.invoices) {
+              setInvoices(data.collections.invoices);
+              localStorage.setItem(`crm_invoices_${freelancerId}`, JSON.stringify(data.collections.invoices));
+            }
+            if (data.collections.proposals) {
+              setProposals(data.collections.proposals);
+              localStorage.setItem(`crm_proposals_${freelancerId}`, JSON.stringify(data.collections.proposals));
+            }
+            if (data.collections.leads) {
+              setLeads(data.collections.leads);
+              localStorage.setItem(`crm_leads_${freelancerId}`, JSON.stringify(data.collections.leads));
+            }
+            if (data.collections.documents) {
+              setDocuments(data.collections.documents);
+              localStorage.setItem(`crm_documents_${freelancerId}`, JSON.stringify(data.collections.documents));
+            }
+            setCloudSyncStatus("synced");
+          }
+        } else {
+          pullCloudData();
+        }
+      } catch (e) {
+        console.warn("Initial sync to cloud failed, pulling:", e);
+        pullCloudData();
+      }
+    };
+
+    initialSync();
+  }, [profile?.id]);
+
+  // Periodic lightweight polling to detect real-time workspace updates from other devices
+  useEffect(() => {
+    if (!profile?.id) return;
+    const freelancerId = profile.id;
+    const deviceId = localStorage.getItem("crm_mobile_device_id") || undefined;
+
+    let isPolling = false;
+    const checkVersion = async () => {
+      if (isPolling || document.hidden || !navigator.onLine) return;
+      isPolling = true;
+      try {
+        const res = await fetch(
+          `/api/workspace/version?freelancerId=${encodeURIComponent(freelancerId)}${
+            deviceId ? `&deviceId=${encodeURIComponent(deviceId)}` : ""
+          }`
+        );
+
+        if (res.status === 403) {
+          const d = await res.json();
+          if (d.error === "device_revoked") {
+            localStorage.removeItem("crm_profile");
+            localStorage.removeItem("crm_mobile_device_id");
+            setProfile(null);
+            setIsConnectExistingOpen(true);
+            return;
+          }
+        }
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && typeof data.version === "number") {
+            if (data.version > lastSeenVersionRef.current) {
+              lastSeenVersionRef.current = data.version;
+              await pullCloudData(true);
+            }
+          }
+        }
+      } catch (err) {
+        // silent version poll error
+      } finally {
+        isPolling = false;
+      }
+    };
+
+    const interval = setInterval(checkVersion, 3500);
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        checkVersion();
+      }
+    };
+    window.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", checkVersion);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", checkVersion);
+    };
   }, [profile?.id, pullCloudData]);
 
   // Stripe session verification handler
@@ -380,7 +628,7 @@ export default function App() {
 
   // Handle connection to existing account & pull cloud data securely
   const handleAccountConnected = useCallback(
-    (connectedProfile: FreelancerProfile) => {
+    (connectedProfile: FreelancerProfile, incomingCollections?: any) => {
       // Ensure onboardingCompleted is explicitly set to true so onboarding never reopens
       const fullProfile: FreelancerProfile = {
         ...connectedProfile,
@@ -391,21 +639,152 @@ export default function App() {
       localStorage.setItem("crm_profile", JSON.stringify(fullProfile));
       setIsConnectExistingOpen(false);
 
-      // Load cached/recovered collections for this profile
-      setClients(loadAndRecoverCollection<Client>("clients", fullProfile.id));
-      setRecords(loadAndRecoverCollection<NoteRecord>("records", fullProfile.id));
-      setProjects(loadAndRecoverCollection<Project>("projects", fullProfile.id));
-      setTasks(loadAndRecoverCollection<Task>("tasks", fullProfile.id));
-      setFollowUps(loadAndRecoverCollection<FollowUp>("followups", fullProfile.id));
-      setInvoices(loadAndRecoverCollection<Invoice>("invoices", fullProfile.id));
-      setProposals(loadAndRecoverCollection<Proposal>("proposals", fullProfile.id));
-      setLeads(loadAndRecoverCollection<Lead>("leads", fullProfile.id));
-      setDocuments(loadAndRecoverCollection<DocumentRecord>("documents", fullProfile.id));
+      if (incomingCollections && typeof incomingCollections === "object") {
+        if (incomingCollections.clients) {
+          setClients(incomingCollections.clients);
+          localStorage.setItem(`crm_clients_${fullProfile.id}`, JSON.stringify(incomingCollections.clients));
+        }
+        if (incomingCollections.records) {
+          setRecords(incomingCollections.records);
+          localStorage.setItem(`crm_records_${fullProfile.id}`, JSON.stringify(incomingCollections.records));
+        }
+        if (incomingCollections.projects) {
+          setProjects(incomingCollections.projects);
+          localStorage.setItem(`crm_projects_${fullProfile.id}`, JSON.stringify(incomingCollections.projects));
+        }
+        if (incomingCollections.tasks) {
+          setTasks(incomingCollections.tasks);
+          localStorage.setItem(`crm_tasks_${fullProfile.id}`, JSON.stringify(incomingCollections.tasks));
+        }
+        if (incomingCollections.followups) {
+          setFollowUps(incomingCollections.followups);
+          localStorage.setItem(`crm_followups_${fullProfile.id}`, JSON.stringify(incomingCollections.followups));
+        }
+        if (incomingCollections.invoices) {
+          setInvoices(incomingCollections.invoices);
+          localStorage.setItem(`crm_invoices_${fullProfile.id}`, JSON.stringify(incomingCollections.invoices));
+        }
+        if (incomingCollections.proposals) {
+          setProposals(incomingCollections.proposals);
+          localStorage.setItem(`crm_proposals_${fullProfile.id}`, JSON.stringify(incomingCollections.proposals));
+        }
+        if (incomingCollections.leads) {
+          setLeads(incomingCollections.leads);
+          localStorage.setItem(`crm_leads_${fullProfile.id}`, JSON.stringify(incomingCollections.leads));
+        }
+        if (incomingCollections.documents) {
+          setDocuments(incomingCollections.documents);
+          localStorage.setItem(`crm_documents_${fullProfile.id}`, JSON.stringify(incomingCollections.documents));
+        }
+      } else {
+        // Load cached/recovered collections for this profile
+        setClients(loadAndRecoverCollection<Client>("clients", fullProfile.id));
+        setRecords(loadAndRecoverCollection<NoteRecord>("records", fullProfile.id));
+        setProjects(loadAndRecoverCollection<Project>("projects", fullProfile.id));
+        setTasks(loadAndRecoverCollection<Task>("tasks", fullProfile.id));
+        setFollowUps(loadAndRecoverCollection<FollowUp>("followups", fullProfile.id));
+        setInvoices(loadAndRecoverCollection<Invoice>("invoices", fullProfile.id));
+        setProposals(loadAndRecoverCollection<Proposal>("proposals", fullProfile.id));
+        setLeads(loadAndRecoverCollection<Lead>("leads", fullProfile.id));
+        setDocuments(loadAndRecoverCollection<DocumentRecord>("documents", fullProfile.id));
+      }
 
       pullCloudData();
     },
     [pullCloudData]
   );
+
+  // Handle successful signup or signin from AuthScreen
+  const handleAuthSuccess = useCallback(
+    (authenticatedProfile: FreelancerProfile, token: string, incomingCollections?: any) => {
+      const fullProfile: FreelancerProfile = {
+        ...authenticatedProfile,
+        onboardingCompleted: true,
+      };
+
+      setProfile(fullProfile);
+      localStorage.setItem("crm_profile", JSON.stringify(fullProfile));
+      if (token) {
+        localStorage.setItem("crm_auth_token", token);
+      }
+      setIsConnectExistingOpen(false);
+
+      if (incomingCollections && typeof incomingCollections === "object") {
+        if (incomingCollections.clients) {
+          setClients(incomingCollections.clients);
+          localStorage.setItem(`crm_clients_${fullProfile.id}`, JSON.stringify(incomingCollections.clients));
+        }
+        if (incomingCollections.records) {
+          setRecords(incomingCollections.records);
+          localStorage.setItem(`crm_records_${fullProfile.id}`, JSON.stringify(incomingCollections.records));
+        }
+        if (incomingCollections.projects) {
+          setProjects(incomingCollections.projects);
+          localStorage.setItem(`crm_projects_${fullProfile.id}`, JSON.stringify(incomingCollections.projects));
+        }
+        if (incomingCollections.tasks) {
+          setTasks(incomingCollections.tasks);
+          localStorage.setItem(`crm_tasks_${fullProfile.id}`, JSON.stringify(incomingCollections.tasks));
+        }
+        if (incomingCollections.followups) {
+          setFollowUps(incomingCollections.followups);
+          localStorage.setItem(`crm_followups_${fullProfile.id}`, JSON.stringify(incomingCollections.followups));
+        }
+        if (incomingCollections.invoices) {
+          setInvoices(incomingCollections.invoices);
+          localStorage.setItem(`crm_invoices_${fullProfile.id}`, JSON.stringify(incomingCollections.invoices));
+        }
+        if (incomingCollections.proposals) {
+          setProposals(incomingCollections.proposals);
+          localStorage.setItem(`crm_proposals_${fullProfile.id}`, JSON.stringify(incomingCollections.proposals));
+        }
+        if (incomingCollections.leads) {
+          setLeads(incomingCollections.leads);
+          localStorage.setItem(`crm_leads_${fullProfile.id}`, JSON.stringify(incomingCollections.leads));
+        }
+        if (incomingCollections.documents) {
+          setDocuments(incomingCollections.documents);
+          localStorage.setItem(`crm_documents_${fullProfile.id}`, JSON.stringify(incomingCollections.documents));
+        }
+      } else {
+        setClients(loadAndRecoverCollection<Client>("clients", fullProfile.id));
+        setRecords(loadAndRecoverCollection<NoteRecord>("records", fullProfile.id));
+        setProjects(loadAndRecoverCollection<Project>("projects", fullProfile.id));
+        setTasks(loadAndRecoverCollection<Task>("tasks", fullProfile.id));
+        setFollowUps(loadAndRecoverCollection<FollowUp>("followups", fullProfile.id));
+        setInvoices(loadAndRecoverCollection<Invoice>("invoices", fullProfile.id));
+        setProposals(loadAndRecoverCollection<Proposal>("proposals", fullProfile.id));
+        setLeads(loadAndRecoverCollection<Lead>("leads", fullProfile.id));
+        setDocuments(loadAndRecoverCollection<DocumentRecord>("documents", fullProfile.id));
+      }
+
+      pullCloudData();
+    },
+    [pullCloudData]
+  );
+
+  // Secure account logout handler
+  const handleLogout = useCallback(async () => {
+    const token = localStorage.getItem("crm_auth_token");
+    if (token) {
+      try {
+        await fetch("/api/auth/logout", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ token }),
+        });
+      } catch (err) {
+        console.warn("Logout request failed:", err);
+      }
+    }
+    localStorage.removeItem("crm_auth_token");
+    localStorage.removeItem("crm_profile");
+    setProfile(null);
+    setIsConnectExistingOpen(false);
+  }, []);
 
   // Synchronize desktop profile with backend store
   useEffect(() => {
@@ -439,11 +818,14 @@ export default function App() {
     };
   }, [pullCloudData]);
 
-  // Handle manual connect with 6-digit code
+  // Handle manual connect with 6-digit code or Workspace ID
   const handleConnectWithCode = useCallback(async (code: string): Promise<boolean> => {
     try {
-      const cleanCode = code.replace(/\D/g, "");
-      if (cleanCode.length !== 6) return false;
+      const trimmed = code.trim();
+      if (!trimmed) return false;
+
+      const cleanNumeric = trimmed.replace(/\D/g, "");
+      const is6Digit = cleanNumeric.length === 6;
 
       const userAgent = navigator.userAgent;
       const isIOS = /iPad|iPhone|iPod/.test(userAgent);
@@ -452,17 +834,32 @@ export default function App() {
       const deviceName = isIOS ? "Apple iPhone" : isAndroid ? "Android Phone" : "Mobile Device";
       const clientDeviceId = getOrCreatePersistentDeviceId();
 
-      const res = await fetch("/api/mobile/verify-pairing", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          pairingCode: cleanCode,
-          clientDeviceId,
-          deviceName,
-          platform,
-          userAgent,
-        }),
-      });
+      let res: Response;
+      if (is6Digit) {
+        res = await fetch("/api/mobile/verify-pairing", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            pairingCode: cleanNumeric,
+            clientDeviceId,
+            deviceName,
+            platform,
+            userAgent,
+          }),
+        });
+      } else {
+        res = await fetch("/api/workspace/connect-by-id", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            workspaceId: trimmed,
+            clientDeviceId,
+            deviceName,
+            platform,
+            userAgent,
+          }),
+        });
+      }
 
       const data = await res.json();
       if (data.success && data.profile) {
@@ -475,6 +872,44 @@ export default function App() {
         if (data.device?.id) {
           localStorage.setItem("crm_mobile_device_id", data.device.id);
         }
+        if (data.collections) {
+          if (data.collections.clients) {
+            setClients(data.collections.clients);
+            localStorage.setItem(`crm_clients_${fullProfile.id}`, JSON.stringify(data.collections.clients));
+          }
+          if (data.collections.records) {
+            setRecords(data.collections.records);
+            localStorage.setItem(`crm_records_${fullProfile.id}`, JSON.stringify(data.collections.records));
+          }
+          if (data.collections.projects) {
+            setProjects(data.collections.projects);
+            localStorage.setItem(`crm_projects_${fullProfile.id}`, JSON.stringify(data.collections.projects));
+          }
+          if (data.collections.tasks) {
+            setTasks(data.collections.tasks);
+            localStorage.setItem(`crm_tasks_${fullProfile.id}`, JSON.stringify(data.collections.tasks));
+          }
+          if (data.collections.followups) {
+            setFollowUps(data.collections.followups);
+            localStorage.setItem(`crm_followups_${fullProfile.id}`, JSON.stringify(data.collections.followups));
+          }
+          if (data.collections.invoices) {
+            setInvoices(data.collections.invoices);
+            localStorage.setItem(`crm_invoices_${fullProfile.id}`, JSON.stringify(data.collections.invoices));
+          }
+          if (data.collections.proposals) {
+            setProposals(data.collections.proposals);
+            localStorage.setItem(`crm_proposals_${fullProfile.id}`, JSON.stringify(data.collections.proposals));
+          }
+          if (data.collections.leads) {
+            setLeads(data.collections.leads);
+            localStorage.setItem(`crm_leads_${fullProfile.id}`, JSON.stringify(data.collections.leads));
+          }
+          if (data.collections.documents) {
+            setDocuments(data.collections.documents);
+            localStorage.setItem(`crm_documents_${fullProfile.id}`, JSON.stringify(data.collections.documents));
+          }
+        }
         await pullCloudData();
         return true;
       }
@@ -485,7 +920,7 @@ export default function App() {
     }
   }, [pullCloudData]);
 
-  // Helper: Persist specific entity locally + Firestore push
+  // Helper: Persist specific entity locally + Cloud endpoint push + direct fallback
   const saveEntity = useCallback(async <T extends { id: string; freelancerId: string }>(
     collectionName: string,
     updatedList: T[],
@@ -498,18 +933,76 @@ export default function App() {
     // Update localStorage instantly
     localStorage.setItem(cacheKey, JSON.stringify(updatedList));
 
-    // Async push to firebase Firestore
+    // Ensure item has freelancerId and updatedAt
+    const enrichedItem = {
+      ...targetItem,
+      freelancerId: profile.id,
+      updatedAt: (targetItem as any).updatedAt || new Date().toISOString(),
+    };
+
     setCloudSyncStatus("syncing");
+    const deviceId = localStorage.getItem("crm_mobile_device_id") || undefined;
+
     try {
-      if (operation === "set") {
-        await setDoc(doc(db, collectionName, targetItem.id), targetItem);
-      } else {
-        await deleteDoc(doc(db, collectionName, targetItem.id));
+      const token = localStorage.getItem("crm_auth_token");
+      const entityHeaders: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) {
+        entityHeaders["Authorization"] = `Bearer ${token}`;
       }
-      setCloudSyncStatus("synced");
-    } catch (e) {
-      console.warn(`Local save complete. Failed background Cloud writing for: ${collectionName}`, e);
-      setCloudSyncStatus("offline");
+
+      // 1. Post to canonical server sync endpoint
+      const res = await fetch("/api/workspace/entity", {
+        method: "POST",
+        headers: entityHeaders,
+        body: JSON.stringify({
+          freelancerId: profile.id,
+          collectionName,
+          operation,
+          item: enrichedItem,
+          deviceId,
+        }),
+      });
+
+      if (res.status === 403) {
+        try {
+          const d = await res.json();
+          if (d.error === "device_revoked") {
+            localStorage.removeItem("crm_profile");
+            localStorage.removeItem("crm_mobile_device_id");
+            setProfile(null);
+            setIsConnectExistingOpen(true);
+            return;
+          }
+        } catch {}
+      }
+
+      if (res.ok) {
+        const d = await res.json();
+        if (d.success && d.version) {
+          lastSeenVersionRef.current = d.version;
+        }
+        setCloudSyncStatus("synced");
+      } else {
+        throw new Error(`Server returned ${res.status}`);
+      }
+    } catch (apiErr) {
+      console.warn(`Server write failed for ${collectionName}, trying direct fallback:`, apiErr);
+      // Fallback: direct Firestore write if client has connection
+      try {
+        if (operation === "set") {
+          await setDoc(doc(db, collectionName, targetItem.id), enrichedItem);
+        } else {
+          await deleteDoc(doc(db, collectionName, targetItem.id));
+        }
+        setCloudSyncStatus("synced");
+      } catch (directErr) {
+        console.warn(`Direct write also failed for ${collectionName}:`, directErr);
+        if (!navigator.onLine) {
+          setCloudSyncStatus("offline");
+        } else {
+          setCloudSyncStatus("error");
+        }
+      }
     }
   }, [profile]);
 
@@ -665,6 +1158,7 @@ export default function App() {
       profile.premium === true ||
       profile.plan === "Pro" ||
       profile.plan === "Monthly" ||
+      profile.plan === "Annual" ||
       profile.plan === "3 Months" ||
       (profile.plan !== undefined && profile.plan !== "Free");
     const isFree = !isPro;
@@ -888,6 +1382,7 @@ export default function App() {
       profile.premium === true ||
       profile.plan === "Pro" ||
       profile.plan === "Monthly" ||
+      profile.plan === "Annual" ||
       profile.plan === "3 Months" ||
       (profile.plan !== undefined && profile.plan !== "Free");
     const isFree = !isPro;
@@ -965,7 +1460,7 @@ export default function App() {
               }}
               className="inline-flex items-center gap-2 text-xs font-bold text-slate-550 hover:text-indigo-600 transition-colors cursor-pointer"
             >
-              &larr; Back to Onboarding
+              &larr; Back to Sign In
             </button>
           </div>
           <PrivacyPolicyView isPublic={true} />
@@ -987,9 +1482,10 @@ export default function App() {
     }
 
     return (
-      <Onboarding
-        onComplete={handleOnboardingComplete}
-        onConnectExisting={() => setIsConnectExistingOpen(true)}
+      <AuthScreen
+        initialMode="signin"
+        onAuthSuccess={handleAuthSuccess}
+        onConnectCode={() => setIsConnectExistingOpen(true)}
       />
     );
   }
@@ -1176,9 +1672,21 @@ export default function App() {
           </button>
         </div>
 
-        {/* Footer info (humble and useful, no telemetries) */}
-        <div className="px-6 pt-3 border-t border-slate-100/10 text-[10px] text-slate-400 flex flex-col gap-1 select-none">
-          <span>Signed: {profile.name}</span>
+        {/* Footer info & Account Logout */}
+        <div className="px-6 pt-3 pb-3 border-t border-slate-100/10 text-[10px] text-slate-400 flex flex-col gap-1.5 select-none">
+          <div className="flex items-center justify-between">
+            <span className="truncate max-w-[130px] font-medium text-slate-500">Signed: {profile.name}</span>
+            <button
+              type="button"
+              id="sidebar-logout-btn"
+              onClick={handleLogout}
+              className="text-[10px] font-bold text-red-500 hover:text-red-700 hover:underline flex items-center gap-1 cursor-pointer transition-colors"
+              title="Sign Out of Workspace"
+            >
+              <LogOut size={10} />
+              <span>Log Out</span>
+            </button>
+          </div>
           <button
             onClick={() => setActiveView("PrivacyPolicy")}
             className="text-left font-bold text-slate-450 hover:text-indigo-600 hover:underline transition-all cursor-pointer"
@@ -1289,16 +1797,28 @@ export default function App() {
               </button>
             </div>
 
-            {/* Mobile Footer Privacy Link */}
-            <div className="pt-2 border-t border-black/5 flex justify-center">
+            {/* Mobile Footer Privacy Link & Logout */}
+            <div className="pt-2 border-t border-black/5 flex items-center justify-between px-2">
               <button
                 onClick={() => {
                   setActiveView("PrivacyPolicy");
                   setMobileMenuOpen(false);
                 }}
-                className="py-1.5 px-3 text-[10px] font-bold text-slate-500 hover:text-indigo-650 transition-colors flex items-center gap-1 cursor-pointer"
+                className="py-1.5 px-2 text-[10px] font-bold text-slate-500 hover:text-indigo-650 transition-colors flex items-center gap-1 cursor-pointer"
               >
                 <span>Privacy Policy</span>
+              </button>
+              <button
+                type="button"
+                id="mobile-drawer-logout-btn"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  handleLogout();
+                }}
+                className="py-1.5 px-2 text-[10px] font-bold text-red-500 hover:text-red-700 transition-colors flex items-center gap-1 cursor-pointer"
+              >
+                <LogOut size={11} />
+                <span>Log Out</span>
               </button>
             </div>
           </motion.div>
@@ -1540,6 +2060,7 @@ export default function App() {
                   onNavigate={setActiveView}
                   onOpenExport={() => setIsExportModalOpen(true)}
                   onOpenMobileModal={() => setIsMobileModalOpen(true)}
+                  onLogout={handleLogout}
                 />
               )}
 
@@ -1620,6 +2141,17 @@ export default function App() {
         cloudSyncStatus={cloudSyncStatus}
         onTriggerSync={pullCloudData}
         onConnectWithCode={handleConnectWithCode}
+        collections={{
+          clients,
+          records,
+          projects,
+          tasks,
+          followups: followUps,
+          invoices,
+          proposals,
+          leads,
+          documents,
+        }}
       />
 
       {/* PWA Floating Install Banner */}

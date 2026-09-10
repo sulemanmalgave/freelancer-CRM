@@ -26,6 +26,7 @@ export function isProPlanUser(profile?: FreelancerProfile | null): boolean {
     profile.premium === true ||
     profile.plan === "Pro" ||
     profile.plan === "Monthly" ||
+    profile.plan === "Annual" ||
     profile.plan === "3 Months" ||
     (profile.plan !== undefined && profile.plan !== "Free")
   );
