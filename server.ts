@@ -321,11 +321,25 @@ async function getFreelancerProfile(freelancerId: string) {
   return null;
 }
 
-// Authentication middleware to validate Firebase ID Tokens
+// Authentication middleware to validate user session tokens or Firebase ID Tokens
 async function authenticateFirebaseUser(req: any, res: any, next: any) {
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith("Bearer ")) {
     const token = authHeader.split(" ")[1];
+
+    // 1. Check if token is a valid CRM session token (email/password account)
+    try {
+      const session = await verifySessionToken(req);
+      if (session && session.freelancerId) {
+        req.userId = session.freelancerId;
+        req.user = { uid: session.freelancerId, email: session.email };
+        return next();
+      }
+    } catch (sessionErr: any) {
+      console.warn(`[Auth] CRM session verification note: ${sessionErr?.message}`);
+    }
+
+    // 2. Check if token is a valid Firebase ID Token
     try {
       ensureFirebaseAdminInitialized();
       const decoded = await getAuth().verifyIdToken(token);
@@ -333,8 +347,8 @@ async function authenticateFirebaseUser(req: any, res: any, next: any) {
       req.userId = decoded.uid;
       return next();
     } catch (err: any) {
-      console.warn(`[Auth] Firebase ID token verification failed: ${err.message}`);
-      return res.status(401).json({ error: "Invalid or expired Firebase Authentication token." });
+      console.warn(`[Auth] Token verification failed: ${err.message}`);
+      return res.status(401).json({ error: "Invalid or expired authentication credentials." });
     }
   }
 

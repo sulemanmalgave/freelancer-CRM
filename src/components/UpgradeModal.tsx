@@ -130,7 +130,13 @@ export default function UpgradeModal({
   useEffect(() => {
     if (isOpen) {
       setPurchaseStage("plans");
-      setSelectedPlan("Monthly");
+      const savedPlan = sessionStorage.getItem("crm_pending_upgrade_plan");
+      if (savedPlan === "Annual" || savedPlan === "Monthly") {
+        setSelectedPlan(savedPlan);
+        sessionStorage.removeItem("crm_pending_upgrade_plan");
+      } else {
+        setSelectedPlan("Monthly");
+      }
       setLogs([]);
       setPaymentError("");
       setIsCancelling(false);
@@ -318,6 +324,10 @@ export default function UpgradeModal({
       }
     } catch (e) {
       console.warn("Failed to retrieve Firebase ID token:", e);
+    }
+    const token = localStorage.getItem("crm_auth_token");
+    if (token) {
+      return { "Authorization": `Bearer ${token}` };
     }
     return {};
   };

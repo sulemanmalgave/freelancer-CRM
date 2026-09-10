@@ -145,10 +145,18 @@ export default function App() {
   }, []);
 
   // Upgrade Modal Trigger Helper
-  const triggerUpgrade = useCallback((reason: string) => {
+  const triggerUpgrade = useCallback((reason: string, preferredPlan?: "Monthly" | "Annual") => {
+    if (preferredPlan) {
+      sessionStorage.setItem("crm_pending_upgrade_plan", preferredPlan);
+    }
+    if (!profile) {
+      sessionStorage.setItem("crm_pending_upgrade_reason", reason);
+      setIsConnectExistingOpen(false);
+      return;
+    }
     setUpgradeReason(reason);
     setUpgradeOpen(true);
-  }, []);
+  }, [profile]);
 
   // PWA Installation state machine
   const [pwaPrompt, setPwaPrompt] = useState<any>(null);
@@ -759,6 +767,14 @@ export default function App() {
       }
 
       pullCloudData();
+
+      // Resume pending upgrade flow if unauthenticated user had initiated upgrade
+      const pendingReason = sessionStorage.getItem("crm_pending_upgrade_reason");
+      if (pendingReason) {
+        sessionStorage.removeItem("crm_pending_upgrade_reason");
+        setUpgradeReason(pendingReason);
+        setUpgradeOpen(true);
+      }
     },
     [pullCloudData]
   );
@@ -1481,9 +1497,12 @@ export default function App() {
       );
     }
 
+    const searchParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+    const initialMode = (searchParams?.get("mode") === "signup" || searchParams?.get("signup") === "true") ? "signup" : "signin";
+
     return (
       <AuthScreen
-        initialMode="signin"
+        initialMode={initialMode}
         onAuthSuccess={handleAuthSuccess}
         onConnectCode={() => setIsConnectExistingOpen(true)}
       />

@@ -316,13 +316,13 @@ export default function AuthScreen({
             Freelancer CRM
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            {mode === "signup" && "Create your secure account to manage clients & projects"}
-            {mode === "signin" && "Sign in to access your CRM workspace and records"}
+            {mode === "signup" && "Create your email and password account to get started"}
+            {mode === "signin" && "Log in to access your CRM workspace and records"}
             {mode === "forgot" && "Reset your account password securely"}
           </p>
         </div>
 
-        {/* Mode Toggle Tabs (Sign In / Create Account) */}
+        {/* Mode Toggle Tabs (Log In / Create Account) */}
         {mode !== "forgot" && (
           <div className="grid grid-cols-2 p-1 bg-slate-100 rounded-2xl mb-6 border border-slate-200/60">
             <button
@@ -335,7 +335,7 @@ export default function AuthScreen({
                   : "text-slate-500 hover:text-slate-800"
               }`}
             >
-              Sign In
+              Log In
             </button>
             <button
               type="button"
@@ -538,10 +538,11 @@ export default function AuthScreen({
                 Already have an account?{" "}
                 <button
                   type="button"
+                  id="switch-to-login-btn"
                   onClick={() => switchMode("signin")}
-                  className="text-indigo-600 hover:text-indigo-700 font-bold hover:underline"
+                  className="text-indigo-600 hover:text-indigo-700 font-bold hover:underline cursor-pointer"
                 >
-                  Sign In
+                  Log In
                 </button>
               </p>
             </div>
@@ -549,9 +550,9 @@ export default function AuthScreen({
         )}
 
         {/* ========================================================= */}
-        {/* VIEW 2: SIGN IN PAGE                                     */}
+        {/* VIEW 2: LOGIN PAGE                                       */}
         {/* Fields: Email Address, Password                          */}
-        {/* Button: "Sign In"                                        */}
+        {/* Button: "Log In"                                         */}
         {/* ========================================================= */}
         {mode === "signin" && (
           <form onSubmit={handleSignIn} className="space-y-4">
@@ -598,7 +599,7 @@ export default function AuthScreen({
                     setForgotEmail(signinEmail);
                     switchMode("forgot");
                   }}
-                  className="text-xs text-indigo-600 hover:text-indigo-700 font-semibold hover:underline"
+                  className="text-xs text-indigo-600 hover:text-indigo-700 font-semibold hover:underline cursor-pointer"
                 >
                   Forgot Password?
                 </button>
@@ -630,7 +631,7 @@ export default function AuthScreen({
               </div>
             </div>
 
-            {/* Submit Button: "Sign In" */}
+            {/* Submit Button: "Log In" */}
             <button
               type="submit"
               id="signin-submit-btn"
@@ -641,7 +642,7 @@ export default function AuthScreen({
                 <Loader2 size={16} className="animate-spin text-white" />
               ) : (
                 <>
-                  <span>Sign In</span>
+                  <span>Log In</span>
                   <ArrowRight size={16} />
                 </>
               )}
@@ -652,8 +653,9 @@ export default function AuthScreen({
                 Don't have an account?{" "}
                 <button
                   type="button"
+                  id="switch-to-signup-btn"
                   onClick={() => switchMode("signup")}
-                  className="text-indigo-600 hover:text-indigo-700 font-bold hover:underline"
+                  className="text-indigo-600 hover:text-indigo-700 font-bold hover:underline cursor-pointer"
                 >
                   Create Account
                 </button>
@@ -671,10 +673,11 @@ export default function AuthScreen({
             <div className="mb-4">
               <button
                 type="button"
+                id="forgot-back-to-login-btn"
                 onClick={() => switchMode("signin")}
-                className="text-xs font-semibold text-slate-500 hover:text-slate-800 flex items-center gap-1 mb-2"
+                className="text-xs font-semibold text-slate-500 hover:text-slate-800 flex items-center gap-1 mb-2 cursor-pointer"
               >
-                <ChevronLeft size={14} /> Back to Sign In
+                <ChevronLeft size={14} /> Back to Log In
               </button>
             </div>
 
