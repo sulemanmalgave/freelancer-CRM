@@ -33,8 +33,6 @@ export default function SettingsView({
   const [currency, setCurrency] = useState(profile?.currency || "USD");
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
-  const [razorpayKeyId, setRazorpayKeyId] = useState(profile?.razorpayKeyId || "");
-  const [razorpayKeySecret, setRazorpayKeySecret] = useState(profile?.razorpayKeySecret || "");
 
   const currenciesList = [
     { code: "USD", symbol: "$", label: "US Dollar ($)" },
@@ -53,8 +51,6 @@ export default function SettingsView({
       name: name.trim(),
       businessName: businessName.trim(),
       currency,
-      razorpayKeyId: razorpayKeyId.trim(),
-      razorpayKeySecret: razorpayKeySecret.trim(),
     });
 
     setSaveSuccess(true);
@@ -65,6 +61,34 @@ export default function SettingsView({
     setIsRestoring(true);
 
     try {
+      const token = localStorage.getItem("crm_auth_token");
+      const res = await fetch(`/api/subscription/status?freelancerId=${profile.id}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const data = await res.json();
+      if (data.isPro && data.profile) {
+        onUpdateProfile(data.profile);
+        alert("Pro subscription verified and active on your account!");
+        return;
+      }
+
+      // If not marked Pro yet, attempt server reconciliation with Razorpay
+      const recRes = await fetch("/api/razorpay/reconcile", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ freelancerId: profile.id, email: profile.email }),
+      });
+      const recData = await recRes.json();
+      if (recData.reconciled && recData.profile) {
+        onUpdateProfile(recData.profile);
+        alert("Payment verified with Razorpay! Your Pro subscription is now activated.");
+        return;
+      }
+
+      // Fallback: check Firestore profile
       const pDoc = doc(db, "freelancers", profile.id);
       const pSnap = await getDoc(pDoc);
 
@@ -77,10 +101,9 @@ export default function SettingsView({
         }
       }
 
-      await new Promise((r) => setTimeout(r, 1000));
       alert("No active subscription entitlements were found for this account on the server.");
     } catch (err) {
-      alert("Unable to locate valid billing parameters on your account.");
+      alert("Unable to complete status verification at this time. Please try again shortly.");
     } finally {
       setIsRestoring(false);
     }
@@ -153,44 +176,6 @@ export default function SettingsView({
               </select>
             </div>
 
-            <div className="pt-5 border-t border-slate-100 space-y-4">
-              <h4 className="font-bold text-xs uppercase tracking-wider text-indigo-600 flex items-center gap-1.5">
-                <Coins className="w-4 h-4 text-indigo-500 animate-pulse" />
-                <span>Razorpay Integration Credentials</span>
-              </h4>
-              <p className="text-[11px] text-slate-400 leading-normal">
-                Provide your personal Razorpay API credentials to bypass the default system sandbox and connect your custom gateway.
-              </p>
-
-              <div className="grid sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-slate-505 font-semibold text-xs mb-1">
-                    Razorpay Key ID
-                  </label>
-                  <input
-                    type="text"
-                    value={razorpayKeyId}
-                    onChange={(e) => setRazorpayKeyId(e.target.value)}
-                    placeholder="rzp_test_..."
-                    className="w-full py-2.5 px-4 text-xs glass-input rounded-xl text-slate-850 focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-slate-505 font-semibold text-xs mb-1">
-                    Razorpay Key Secret
-                  </label>
-                  <input
-                    type="password"
-                    value={razorpayKeySecret}
-                    onChange={(e) => setRazorpayKeySecret(e.target.value)}
-                    placeholder="Keep secure"
-                    className="w-full py-2.5 px-4 text-xs glass-input rounded-xl text-slate-850 focus:outline-none"
-                  />
-                </div>
-              </div>
-            </div>
-
             <button
               type="submit"
               className="px-5 py-2.5 bg-indigo-650 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold leading-normal transition-all float-right cursor-pointer"
@@ -205,34 +190,76 @@ export default function SettingsView({
 
           {/* Plan Configuration billing parameters */}
           <div className="p-5 glass-panel rounded-2xl text-xs">
-            <h3 className="font-bold text-xs uppercase tracking-widest text-slate-450 mb-3 block">Billing Entitlements</h3>
+            <h3 className="font-bold text-xs uppercase tracking-widest text-slate-450 mb-3 block">Payment & Subscription</h3>
 
-            {profile.premium === true || profile.plan !== "Free" ? (
+            {profile.premium === true || (profile.plan && profile.plan !== "Free") ? (
               <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl space-y-2 mt-2">
-                <div className="flex items-center gap-1.5 text-emerald-600 font-bold">
-                  <ShieldCheck className="w-4 h-4" />
-                  <span>Pro Subscription Active</span>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-emerald-600 font-bold">
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>Pro Plan Active</span>
+                  </div>
+                  <span className="px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-700 rounded-full">
+                    {profile.subscriptionStatus || "Active"}
+                  </span>
                 </div>
-                <div className="text-[10px] text-slate-500 space-y-1">
-                  <div>Method: <strong className="text-slate-700">{profile.subscriptionMethod || "Direct Gateway"}</strong></div>
-                  <div>Region: <strong className="text-slate-700">{profile.subscriptionRegion === "IN" ? "India (₹199/mo · ₹399/yr)" : "International ($2.99/mo · $19.99/yr)"}</strong></div>
+                <div className="text-[11px] text-slate-600 space-y-1 pt-1 border-t border-emerald-500/10">
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Plan Tier:</span>
+                    <strong className="text-slate-700">{profile.plan || "Pro"}</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Payment Gateway:</span>
+                    <strong className="text-slate-700">{profile.paymentGateway || profile.subscriptionMethod || "Razorpay"}</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Billing Region:</span>
+                    <strong className="text-slate-700">{profile.subscriptionRegion === "IN" ? "India (₹199/mo · ₹399/yr)" : "International ($2.99/mo · $19.99/yr)"}</strong>
+                  </div>
+                  {(profile.subscriptionRenewsAt || profile.expiryDate) && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Next Renewal:</span>
+                      <strong className="text-slate-700">
+                        {new Date(profile.subscriptionRenewsAt || profile.expiryDate || "").toLocaleDateString(undefined, {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                        })}
+                      </strong>
+                    </div>
+                  )}
                 </div>
-                <button
-                  onClick={() => onTriggerUpgrade("settings_upgrade")}
-                  className="w-full mt-2 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold text-center transition-all flex items-center justify-center gap-1 cursor-pointer"
-                >
-                  <Sparkles size={11} />
-                  <span>Manage Subscription</span>
-                </button>
+                <div className="pt-2 flex flex-col gap-1.5">
+                  <button
+                    onClick={() => onTriggerUpgrade("settings_upgrade")}
+                    className="w-full py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold text-center transition-all flex items-center justify-center gap-1 cursor-pointer"
+                  >
+                    <Sparkles size={11} />
+                    <span>Manage Subscription</span>
+                  </button>
+                  <button
+                    onClick={handleRestorePurchases}
+                    disabled={isRestoring}
+                    className="w-full py-1.5 border border-slate-200 hover:bg-slate-50 rounded-lg text-[10px] font-bold text-slate-600 text-center flex items-center justify-center gap-1 cursor-pointer transition-all disabled:opacity-50"
+                  >
+                    <RefreshCw size={11} className={isRestoring ? "animate-spin" : ""} />
+                    <span>{isRestoring ? "Verifying..." : "Verify / Sync Status"}</span>
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="p-3 bg-black/5 border border-black/5 rounded-xl space-y-2.5 mt-2">
-                <div className="flex items-center gap-1.5 text-slate-655 font-bold">
-                  <Landmark className="w-4 h-4" />
-                  <span>Free Plan Workspace</span>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-slate-655 font-bold">
+                    <Landmark className="w-4 h-4" />
+                    <span>Free Plan Workspace</span>
+                  </div>
+                  <span className="px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-slate-200 text-slate-600 rounded-full">
+                    Free
+                  </span>
                 </div>
                 <p className="text-[10px] text-slate-400 leading-normal">
-                  Tier limits of up to 10 clients and 10 projects are active. Subscribe to unlock unlimited records.
+                  Standard tier limits are active. Upgrade to Pro for unlimited clients, projects, Gmail integration, and notes.
                 </p>
                 <div className="flex flex-col gap-1.5 pt-1.5">
                   <button
@@ -240,14 +267,15 @@ export default function SettingsView({
                     className="w-full py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold text-center transition-all flex items-center justify-center gap-0.5 cursor-pointer"
                   >
                     <Sparkles size={11} />
-                    <span>Subscribe Now</span>
+                    <span>Upgrade to Pro</span>
                   </button>
                   <button
-                    onClick={() => onTriggerUpgrade("settings_upgrade")}
-                    className="w-full py-1.5 border border-slate-200 hover:bg-slate-50 rounded-lg text-[10px] font-bold text-slate-600 text-center flex items-center justify-center gap-1 cursor-pointer"
+                    onClick={handleRestorePurchases}
+                    disabled={isRestoring}
+                    className="w-full py-1.5 border border-slate-200 hover:bg-slate-50 rounded-lg text-[10px] font-bold text-slate-600 text-center flex items-center justify-center gap-1 cursor-pointer transition-all disabled:opacity-50"
                   >
-                    <RefreshCw size={11} />
-                    <span>Restore Purchases</span>
+                    <RefreshCw size={11} className={isRestoring ? "animate-spin" : ""} />
+                    <span>{isRestoring ? "Verifying..." : "Restore Purchases"}</span>
                   </button>
                 </div>
               </div>

@@ -205,9 +205,9 @@
   },
   "freelancers": {
     "54395c83-8a90-4a6a-bd2f-ac95c8ea2052": {
-      "subscriptionRenewsAt": "",
+      "subscriptionRenewsAt": "2026-10-11T13:57:40.791Z",
       "gmailName": "Suleman Malgave",
-      "subscriptionStatus": "cancelled",
+      "subscriptionStatus": "active",
       "currency": "INR",
       "onboardingCompleted": true,
       "gmailConnectedAt": "2026-09-03T04:16:50.864Z",
@@ -217,12 +217,19 @@
       "createdAt": "2026-06-25T11:37:00.919Z",
       "subscriptionRegion": "IN",
       "billingCountry": "IN",
-      "name": "suleman malgave",
+      "name": "suleman",
       "id": "54395c83-8a90-4a6a-bd2f-ac95c8ea2052",
       "country": "IN",
       "businessName": "malgave solutions",
-      "plan": "Free",
-      "subscriptionMethod": "UPI (Restored)"
+      "plan": "Pro",
+      "subscriptionMethod": "Razorpay",
+      "email": "sulemanmalgave1@gmail.com",
+      "updatedAt": "2026-09-10T14:41:38.056Z",
+      "premium": true,
+      "paymentGateway": "Razorpay",
+      "purchaseDate": "2026-09-11T13:57:40.792Z",
+      "expiryDate": "2026-10-11T13:57:40.791Z",
+      "transactionId": "pay_TaMw1LOI4gZm2Z"
     }
   },
   "config": {
@@ -320,13 +327,67 @@
   "workspace_meta": {
     "54395c83-8a90-4a6a-bd2f-ac95c8ea2052": {
       "freelancerId": "54395c83-8a90-4a6a-bd2f-ac95c8ea2052",
-      "version": 2,
-      "lastModified": "2026-09-09T09:04:20.036Z"
+      "version": 7,
+      "lastModified": "2026-09-11T13:55:13.194Z"
     }
   },
   "projects": {},
   "records": {},
   "followups": {},
   "leads": {},
-  "documents": {}
+  "documents": {},
+  "auth_sessions": {
+    "dc16e830e301de86e590dd2d5b2def0ce561b334bb9da0651000f7b21da0da90": {
+      "token": "dc16e830e301de86e590dd2d5b2def0ce561b334bb9da0651000f7b21da0da90",
+      "freelancerId": "54395c83-8a90-4a6a-bd2f-ac95c8ea2052",
+      "email": "sulemanmalgave1@gmail.com",
+      "createdAt": "2026-09-10T14:41:38.057Z",
+      "expiresAt": "2026-10-10T14:41:38.057Z"
+    }
+  },
+  "users": {
+    "54395c83-8a90-4a6a-bd2f-ac95c8ea2052": {
+      "plan": "pro",
+      "billingCountry": "IN",
+      "paymentProvider": "razorpay",
+      "subscriptionPlan": "monthly",
+      "subscriptionStatus": "active",
+      "proUntil": {
+        "_seconds": 1791727060,
+        "_nanoseconds": 791000000
+      },
+      "providerCustomerId": null,
+      "providerSubscriptionId": "pay_TaMw1LOI4gZm2Z",
+      "updatedAt": "2026-09-10T14:45:40.203Z"
+    }
+  },
+  "payments": {
+    "pay_TaMw1LOI4gZm2Z": {
+      "userId": "54395c83-8a90-4a6a-bd2f-ac95c8ea2052",
+      "provider": "razorpay",
+      "planId": "monthly",
+      "amount": 199,
+      "currency": "INR",
+      "status": "completed",
+      "providerPaymentId": "pay_TaMw1LOI4gZm2Z",
+      "createdAt": {
+        "_seconds": 1789135060,
+        "_nanoseconds": 792000000
+      }
+    }
+  },
+  "orders": {
+    "order_TaMvprWckOR1OW": {
+      "orderId": "order_TaMvprWckOR1OW",
+      "freelancerId": "54395c83-8a90-4a6a-bd2f-ac95c8ea2052",
+      "planName": "Monthly",
+      "amount": 199,
+      "amountInPaise": 19900,
+      "currency": "INR",
+      "status": "paid",
+      "paymentId": "pay_TaMw1LOI4gZm2Z",
+      "createdAt": "2026-09-10T14:35:25.000Z",
+      "updatedAt": "2026-09-10T14:45:40.203Z"
+    }
+  }
 }

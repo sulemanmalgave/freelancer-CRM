@@ -622,11 +622,11 @@ export default function UpgradeModal({
         description: `${selectedPlan} Pro Subscription`,
         order_id: orderData.orderId,
         handler: async function (response: any) {
+          setPurchaseStage("processing");
           setLogs((prev) => [
             ...prev,
-            "[Razorpay] Authorized! Received secure transaction signature.",
-            "[Razorpay] Saving transaction status locally to ensure no payment is lost...",
-            "[Razorpay] Transmitting signature token to verification server..."
+            "Payment successful",
+            "Activating your Pro subscription...",
           ]);
 
           const pendingRazorpay = {
@@ -657,29 +657,52 @@ export default function UpgradeModal({
             });
 
             const verifyResult = await verifyRes.json();
-            if (verifyResult.success) {
-              setLogs((prev) => [...prev, "[Razorpay] Signature validated successfully! Synced entitlements."]);
+            if (verifyResult.success && verifyResult.profile) {
+              setLogs((prev) => [...prev, "Pro is active! Your workspace is upgraded."]);
               removePendingVerification(pendingRazorpay);
               onUpgradeSuccess("Pro" as any, verifyResult.profile);
               setPurchaseStage("success");
-            } else if (verifyResult.isPending) {
-              setLogs((prev) => [...prev, "[Razorpay] Connection delay. Your payment is safe. Automatically activating Pro state in background..."]);
-              onUpgradeSuccess("Pro" as any, verifyResult.profile || profile);
-              setPurchaseStage("success");
             } else {
-              throw new Error(verifyResult.error || "Signature validation refused by gateway server.");
+              // Server verification delay - poll server subscription status
+              setLogs((prev) => [...prev, "Payment received. We're confirming your Pro subscription..."]);
+              
+              let confirmed = false;
+              for (let i = 0; i < 5; i++) {
+                await new Promise((r) => setTimeout(r, 2000));
+                try {
+                  const statusRes = await fetch(`/api/subscription/status?freelancerId=${profile.id}`, {
+                    headers: verificationAuthHeader,
+                  });
+                  const statusData = await statusRes.json();
+                  if (statusData.isPro && statusData.profile) {
+                    confirmed = true;
+                    setLogs((prev) => [...prev, "Pro is active! Your workspace is upgraded."]);
+                    removePendingVerification(pendingRazorpay);
+                    onUpgradeSuccess("Pro" as any, statusData.profile);
+                    setPurchaseStage("success");
+                    break;
+                  }
+                } catch (pollErr) {
+                  console.warn("Polling error:", pollErr);
+                }
+              }
+
+              if (!confirmed) {
+                setPaymentError(verifyResult.error || "Subscription verification is taking longer than usual. Please click 'Verify / Sync Status' in Settings or wait a moment.");
+                setPurchaseStage("failed");
+              }
             }
           } catch (verErr: any) {
             console.error("Razorpay Signature Verification Error:", verErr);
-            // Since it failed but we have it in pending verification, let's treat it as pending success
-            setLogs((prev) => [...prev, "[Razorpay] Verification timed out, but your transaction is recorded. Activating in background, please do not pay again!"]);
-            onUpgradeSuccess("Pro" as any, profile);
-            setPurchaseStage("success");
+            setLogs((prev) => [...prev, `[Razorpay] ${verErr.message || "Payment verification failed."}`]);
+            setPaymentError(verErr.message || "Payment verification failed. Please try again or verify status in Settings.");
+            setPurchaseStage("failed");
           }
         },
         prefill: {
           name: profile.name || "",
-          email: "billing@freelancercrm.com",
+          email: profile.email || profile.gmailEmail || "",
+          contact: profile.contact || profile.phone || "",
         },
         theme: {
           color: "#4F46E5",
